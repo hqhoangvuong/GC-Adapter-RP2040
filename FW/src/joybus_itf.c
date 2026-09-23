@@ -15,6 +15,7 @@ volatile bool _gc_tx_done = false;
 bool _gc_running = false;
 
 #define ALIGNED_JOYBUS_8(val) ((val) << 24)
+#define JOYBUS_SM_MASK ((1u << ADAPTER_PORT_COUNT) - 1)
 
 uint8_t _port_phases[4] = {0};
 uint32_t _port_probes[4] = {0};
@@ -169,17 +170,17 @@ void _gc_port_data(uint port)
 
 void _gamecube_get_data()
 {
-    _gc_port_data(0);
-    _gc_port_data(1);
-    _gc_port_data(2);
-    _gc_port_data(3);
+    for (uint i = 0; i < ADAPTER_PORT_COUNT; i++)
+    {
+        _gc_port_data(i);
+    }
 }
 
 void _gamecube_send_probe()
 {
     pio_sm_clear_fifos(JOYBUS_PIO, 0);
-    pio_set_sm_mask_enabled(JOYBUS_PIO, 0b1111, false);
-    for (uint i = 0; i < 4; i++)
+    pio_set_sm_mask_enabled(JOYBUS_PIO, JOYBUS_SM_MASK, false);
+    for (uint i = 0; i < ADAPTER_PORT_COUNT; i++)
     {
         switch (_port_phases[i])
         {
@@ -210,7 +211,7 @@ void _gamecube_send_probe()
         break;
         }
     }
-    pio_set_sm_mask_enabled(JOYBUS_PIO, 0b1111, true);
+    pio_set_sm_mask_enabled(JOYBUS_PIO, JOYBUS_SM_MASK, true);
 }
 
 void joybus_itf_enable_rumble(uint8_t interface, bool enable)
@@ -250,6 +251,6 @@ void joybus_itf_init()
         _port_joybus[i].port_itf = -1;
     }
 
-    joybus_program_init(JOYBUS_PIO, _gamecube_offset + joybus_offset_joybusout, JOYBUS_PORT_1, _gamecube_c);
+    joybus_program_init(JOYBUS_PIO, _gamecube_offset + joybus_offset_joybusout, JOYBUS_PORT_1, ADAPTER_PORT_COUNT, _gamecube_c);
     sleep_ms(100);
 }

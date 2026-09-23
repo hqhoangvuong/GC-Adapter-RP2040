@@ -51,13 +51,14 @@ bitloop:
 
 % c-sdk {
 
-// Joybus program hogs all four state machines simultaneously 
-static inline void joybus_program_init(PIO pio, uint offset, uint pin, pio_sm_config *configs) {
+// Joybus program uses one state machine per port (up to four),
+// on consecutive pins starting at pin
+static inline void joybus_program_init(PIO pio, uint offset, uint pin, uint count, pio_sm_config *configs) {
 
     // Must run 12800000hz
     float div = clock_get_hz(clk_sys) / (4000000);
 
-    for(uint i = 0; i < 4; i++)
+    for(uint i = 0; i < count; i++)
     {
         configs[i] = joybus_program_get_default_config(offset);
         gpio_init(pin+i);

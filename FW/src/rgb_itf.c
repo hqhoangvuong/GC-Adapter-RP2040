@@ -4,7 +4,12 @@ void rgb_itf_update(rgb_s *leds)
 {
     for(uint8_t i = 0; i < ADAPTER_RGB_COUNT; i++)
     {
-        pio_sm_put_blocking(RGB_PIO, RGB_SM, leds[i].color);
+        uint32_t color = leds[i].color;
+#if (UTIL_RGB_SWAP_RG)
+        // Swap the G (bits 31-24) and R (bits 23-16) bytes
+        color = ((color & 0x00FF0000) << 8) | ((color >> 8) & 0x00FF0000) | (color & 0x0000FFFF);
+#endif
+        pio_sm_put_blocking(RGB_PIO, RGB_SM, color);
     }
 }
 

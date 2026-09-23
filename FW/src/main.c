@@ -7,24 +7,12 @@ bool cb_adapter_hardware_test()
 
     // Check GPIO levels if they are all HIGH indicating pull-ups are working
     bool gpio_fail = false;
-    if(!adapter_ll_gpio_read(JOYBUS_PORT_1))
+    for (uint i = 0; i < ADAPTER_PORT_COUNT; i++)
     {
-        gpio_fail=true;
-    }
-
-    if(!adapter_ll_gpio_read(JOYBUS_PORT_2))
-    {
-        gpio_fail=true;
-    }
-
-    if(!adapter_ll_gpio_read(JOYBUS_PORT_3))
-    {
-        gpio_fail=true;
-    }
-
-    if(!adapter_ll_gpio_read(JOYBUS_PORT_4))
-    {
-        gpio_fail=true;
+        if(!adapter_ll_gpio_read(JOYBUS_PORT_1 + i))
+        {
+            gpio_fail=true;
+        }
     }
 
     // If the test has failed, we can return a fail

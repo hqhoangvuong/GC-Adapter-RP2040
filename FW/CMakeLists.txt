@@ -23,7 +23,14 @@ if (EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
 # ====================================================================================
-set(PICO_BOARD pico CACHE STRING "Board type")
+# Waveshare RP2040-Zero build: 1 controller port, onboard LED, 1 mode button.
+# Use a fresh build directory when switching, PICO_BOARD is cached.
+option(BOARD_RP2040_ZERO "Build for the Waveshare RP2040-Zero (1 port)" OFF)
+if(BOARD_RP2040_ZERO)
+  set(PICO_BOARD waveshare_rp2040_zero CACHE STRING "Board type")
+else()
+  set(PICO_BOARD pico CACHE STRING "Board type")
+endif()
 
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
@@ -95,6 +102,7 @@ target_compile_definitions(${PROJECT_NAME}
 	PICO_DEFAULT_UART_TX_PIN=12
 	PICO_DEFAULT_UART_RX_PIN=13
     ADAPTER_MCU_TYPE=1
+	$<$<BOOL:${BOARD_RP2040_ZERO}>:BOARD_RP2040_ZERO=1>
 	#PICO_DEFAULT_BOOT_STAGE2=boot2_generic_03h
 	#PICO_FLASH_SPI_CLKDIV=8
 	)

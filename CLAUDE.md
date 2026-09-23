@@ -36,6 +36,18 @@ Build side effects:
 - A post-build step (`FW/manifest.cmake`) reads `ADAPTER_FIRMWARE_VERSION` from `FW/include/adapter_config.h` and writes it as a decimal number to `fw_version` in `FW/manifest.json`. To release, bump the hex version in `adapter_config.h`, update the `changelog` in `manifest.json`, and rebuild.
 - `.gitignore` ignores `FW/build/*` except for `gc_adapter_rp2040.uf2`, so the release binary is committed.
 
+### Waveshare RP2040-Zero variant
+
+`-DBOARD_RP2040_ZERO=ON` builds a 1-port version for the Waveshare RP2040-Zero. It sets `PICO_BOARD=waveshare_rp2040_zero` and defines `BOARD_RP2040_ZERO`, which switches the settings in `adapter_config.h` and `main.h`:
+- data pin GP0
+- one button (GP14)
+- one LED (GP16)
+- `ADAPTER_PORT_COUNT 1`
+
+Build it in its own directory (e.g. `build-zero`), because `PICO_BOARD` is cached. Wiring and behaviour are described in `FW/RP2040-Zero.md`.
+
+Code that loops over ports must use `ADAPTER_PORT_COUNT`, not 4. Keep the per-port arrays (`_port_joybus[4]` etc.) at size 4, because `common` (`devices/gcinput.c`, `ll/adapter_ll_rp2040.c`) always reads four entries.
+
 ## Firmware architecture
 
 The shared, board-independent adapter logic is in `FW/common`. The same library also targets ESP32 (`ADAPTER_MCU_TYPE`: 1 = RP2040, 2 = ESP32). This repo supplies only the board-specific pieces, and `common` calls into them:
@@ -56,11 +68,11 @@ The shared, board-independent adapter logic is in `FW/common`. The same library 
 Changing the mode with the two buttons (`ADAPTER_BUTTON_1/2`) reboots the device, carrying the new mode in reboot memory. Mode changes are ignored while any controller is connected.
 
 ### Joybus (`FW/src/joybus_itf.c` + `FW/pio/joybus.pio`)
-- `pio0` runs one state machine per port, SM index = port index. The data pins are consecutive, starting at `JOYBUS_PORT_1` (GPIO 22–25). The WS2812 LEDs run on `pio1`, SM 0, GPIO 10.
+- `pio0` runs one state machine per port, SM index = port index. The data pins are consecutive, starting at `JOYBUS_PORT_1` (GPIO 22–25 on the GCP+). The WS2812 LEDs run on `pio1`, SM 0, GPIO 10 on the GCP+.
 - Each port goes through three phases in `_port_phases[]`:
   - 0: probe with `0x00`
   - 1: origin request `0x41`. Its reply sets per-port analog offsets so sticks centre on 128 and triggers on 0. The port also gets the lowest free USB interface slot (`port_itf`).
   - 2: poll with `0x40 0x03 <rumble>`. The offsets are applied to each reply.
 - After 10 consecutive empty reads a port resets to phase 0 and `port_itf = -1`.
-- Every poll sends to all four SMs, waits 500 µs, then drains their RX FIFOs. Timing here matters, so keep the poll path non-blocking and short.
+- Every poll sends to all `ADAPTER_PORT_COUNT` SMs, waits 500 µs, then drains their RX FIFOs. Timing here matters, so keep the poll path non-blocking and short.
 - `joybus_itf_enable_rumble` takes a **USB interface** index, not a physical port. It looks up the port through `port_itf`.
