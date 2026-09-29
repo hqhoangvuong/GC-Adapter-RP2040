@@ -122,6 +122,20 @@ them.**
 Each button connects its pin to GND. Without buttons the adapter stays in its
 default mode, Switch Pro Controller.
 
+```
+  GP11 ──── [button] ──── GND     (back)
+  GP12 ──── [button] ──── GND     (forward)
+```
+
+- Use any momentary push button. No resistor is needed: the firmware turns
+  on the chip's internal pull-ups, and it samples the buttons every 16 ms,
+  which also removes contact bounce.
+- On a 4-pin tactile switch, use two **diagonally opposite** legs. Legs on
+  the same long side are already joined inside, so a button wired across
+  them would read as always pressed.
+- Mode order going forward: Switch Pro → XInput → GameCube adapter →
+  Slippi → back to Switch Pro. The adapter reboots into the new mode.
+
 - GP11 press and release: previous mode. GP12 press and release: next mode.
 - Both together, then release: save the current mode as the default.
 - Mode changes only work while **no controller is plugged in**.
@@ -157,3 +171,35 @@ Everything runs from the USB port. Rumble motors draw from the 5V pin, so
 several controllers rumbling at once need a port and cable that can supply
 it. The board's 3.3 V regulator also powers the controllers' logic, which
 is fine for four controllers.
+
+### Capacitor on the rumble supply
+
+When the rumble motor starts it draws a burst of current from the 5V pin.
+That can pull the USB supply down for a moment and, in bad cases, reset the
+board or corrupt a controller read. A capacitor across 5V and GND near the
+controller supplies that burst locally.
+
+```
+  5V  ───┬──────────────► controller 5V (rumble)
+         │ +
+       [ C1 ]  47–100 µF electrolytic, 10 V or higher
+         │ −
+  GND ───┴──────────────► controller GND
+         │
+       [ C2 ]  100 nF ceramic, in parallel with C1 (optional)
+```
+
+- **C1, 47–100 µF electrolytic, rated 10 V or more.** The **stripe marks the
+  negative leg**, which goes to GND; the longer leg is positive and goes to
+  5V. Reversed, an electrolytic can overheat or burst.
+- **C2, 100 nF ceramic (optional).** It has no polarity and handles the fast
+  electrical noise the large capacitor is too slow for.
+- Place both where the controller's 5V and GND wires join, with short leads.
+- Don't go much above 100 µF. The USB standard limits the capacitance a
+  device may put across USB 5V at plug-in (10 µF is the formal limit), because
+  a big capacitor causes a current surge when you plug in. Most ports
+  tolerate up to around 100 µF; much larger can cause USB dropouts.
+- The voltage spikes from the motor coil are handled by the controller's own
+  motor driver. The capacitor's real job is stopping the supply dip.
+- Optional: a 10 µF capacitor from 3V3 to GND near the controller steadies
+  the 3.3 V line too. Observe polarity if it is electrolytic or tantalum.
