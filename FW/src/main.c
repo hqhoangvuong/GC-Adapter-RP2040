@@ -27,8 +27,13 @@ bool cb_adapter_hardware_test()
         gpio_fail=true;
     }
 
-    // If the test has failed, we can return a fail
-    if(gpio_fail) return false;
+    // If the test has failed, show orange now: the caller halts without
+    // ever pushing its own colour to the LEDs
+    if(gpio_fail)
+    {
+        rgb_set_instant(COLOR_ORANGE.color);
+        return false;
+    }
 
     // Flash all three rgb colors then we can return our test value
     rgb_set_instant(COLOR_RED.color);

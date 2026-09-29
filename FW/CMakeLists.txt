@@ -23,7 +23,28 @@ if (EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
 # ====================================================================================
-set(PICO_BOARD pico CACHE STRING "Board type")
+# Target hardware: "gcp2" is the Hand Held Legend GC Pocket+ PCB,
+# "rp2040_zero" is a Waveshare RP2040-Zero (or clone) wired by hand.
+set(ADAPTER_BOARD "gcp2" CACHE STRING "Target hardware: gcp2 or rp2040_zero")
+set_property(CACHE ADAPTER_BOARD PROPERTY STRINGS gcp2 rp2040_zero)
+
+if(ADAPTER_BOARD STREQUAL "rp2040_zero")
+  set(PICO_BOARD waveshare_rp2040_zero CACHE STRING "Board type")
+  # First of the four consecutive GPIOs used for GC ports 1-4
+  set(ADAPTER_GC_PIN_BASE 26 CACHE STRING "First GC data GPIO (ports use BASE..BASE+3)")
+  option(ADAPTER_LED_RGB_ORDER "Onboard LED takes RGB instead of GRB byte order" OFF)
+elseif(ADAPTER_BOARD STREQUAL "gcp2")
+  set(PICO_BOARD pico CACHE STRING "Board type")
+else()
+  message(FATAL_ERROR "Unknown ADAPTER_BOARD '${ADAPTER_BOARD}' (use gcp2 or rp2040_zero)")
+endif()
+
+# Clone boards ship with assorted flash chips. The generic boot stage 2 works
+# with any SPI NOR flash, at the cost of slower code fetches from flash.
+option(ADAPTER_GENERIC_FLASH_BOOT "Use the generic (03h) flash boot stage 2" OFF)
+if(ADAPTER_GENERIC_FLASH_BOOT)
+  set(PICO_DEFAULT_BOOT_STAGE2 boot2_generic_03h)
+endif()
 
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
@@ -95,9 +116,18 @@ target_compile_definitions(${PROJECT_NAME}
 	PICO_DEFAULT_UART_TX_PIN=12
 	PICO_DEFAULT_UART_RX_PIN=13
     ADAPTER_MCU_TYPE=1
-	#PICO_DEFAULT_BOOT_STAGE2=boot2_generic_03h
 	#PICO_FLASH_SPI_CLKDIV=8
 	)
+
+if(ADAPTER_BOARD STREQUAL "rp2040_zero")
+  target_compile_definitions(${PROJECT_NAME} PRIVATE
+    ADAPTER_BOARD_RP2040_ZERO=1
+    ADAPTER_GC_PIN_BASE=${ADAPTER_GC_PIN_BASE}
+  )
+  if(ADAPTER_LED_RGB_ORDER)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE ADAPTER_LED_RGB_ORDER=1)
+  endif()
+endif()
 
 # Pull in pico libraries that we need
 target_link_libraries(${PROJECT_NAME}

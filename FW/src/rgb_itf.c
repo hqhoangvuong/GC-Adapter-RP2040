@@ -4,7 +4,13 @@ void rgb_itf_update(rgb_s *leds)
 {
     for(uint8_t i = 0; i < ADAPTER_RGB_COUNT; i++)
     {
-        pio_sm_put_blocking(RGB_PIO, RGB_SM, leds[i].color);
+        rgb_s out = leds[i];
+        #if defined(ADAPTER_LED_RGB_ORDER)
+        // LED expects red first: swap the red and green bytes
+        out.r = leds[i].g;
+        out.g = leds[i].r;
+        #endif
+        pio_sm_put_blocking(RGB_PIO, RGB_SM, out.color);
     }
 }
 

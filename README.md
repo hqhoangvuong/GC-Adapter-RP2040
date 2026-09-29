@@ -32,3 +32,6 @@ All 3D parts are in the [/3d directory](https://github.com/HandHeldLegend/GC-Ada
 	- Purple - GameCube OEM Mode 
 	- Green - XInput (Xbox 360 Controllers)
     - Pink - Slippi (1khz polling)
+
+## Waveshare RP2040-Zero build
+The firmware can also run on a hand-wired Waveshare RP2040-Zero (or clone). See [docs/rp2040-zero.md](docs/rp2040-zero.md) for wiring, prebuilt files and build options.
