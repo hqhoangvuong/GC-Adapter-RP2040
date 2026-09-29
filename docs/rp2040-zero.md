@@ -199,7 +199,8 @@ controller supplies that burst locally.
   device may put across USB 5V at plug-in (10 µF is the formal limit), because
   a big capacitor causes a current surge when you plug in. Most ports
   tolerate up to around 100 µF; much larger can cause USB dropouts.
-- The voltage spikes from the motor coil are handled by the controller's own
-  motor driver. The capacitor's real job is stopping the supply dip.
+- The motor and its driver sit inside the controller, so coil spikes are
+  mostly contained there. On the adapter side, the main job of the capacitor
+  is to stop the supply dip.
 - Optional: a 10 µF capacitor from 3V3 to GND near the controller steadies
   the 3.3 V line too. Observe polarity if it is electrolytic or tantalum.
