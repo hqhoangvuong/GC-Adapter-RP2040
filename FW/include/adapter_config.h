@@ -1,7 +1,10 @@
 #define ADAPTER_BUTTON_1  11
 #define ADAPTER_BUTTON_2  12
 #define ADAPTER_RGB_COUNT 4
+// Number of GC ports (1-4). CMake can override it for hand-wired boards.
+#ifndef ADAPTER_PORT_COUNT
 #define ADAPTER_PORT_COUNT 4
+#endif
 
 #define ADAPTER_MANUFACTURER "HHL"
 #define ADAPTER_PRODUCT "GC Pocket+"

@@ -31,7 +31,8 @@ set_property(CACHE ADAPTER_BOARD PROPERTY STRINGS gcp2 rp2040_zero)
 if(ADAPTER_BOARD STREQUAL "rp2040_zero")
   set(PICO_BOARD waveshare_rp2040_zero CACHE STRING "Board type")
   # First of the four consecutive GPIOs used for GC ports 1-4
-  set(ADAPTER_GC_PIN_BASE 26 CACHE STRING "First GC data GPIO (ports use BASE..BASE+3)")
+  set(ADAPTER_GC_PIN_BASE 26 CACHE STRING "First GC data GPIO (ports use consecutive pins from here)")
+  set(ADAPTER_PORT_COUNT 4 CACHE STRING "Number of GC ports, 1-4")
   option(ADAPTER_LED_RGB_ORDER "Onboard LED takes RGB instead of GRB byte order" OFF)
 elseif(ADAPTER_BOARD STREQUAL "gcp2")
   set(PICO_BOARD pico CACHE STRING "Board type")
@@ -123,6 +124,7 @@ if(ADAPTER_BOARD STREQUAL "rp2040_zero")
   target_compile_definitions(${PROJECT_NAME} PRIVATE
     ADAPTER_BOARD_RP2040_ZERO=1
     ADAPTER_GC_PIN_BASE=${ADAPTER_GC_PIN_BASE}
+    ADAPTER_PORT_COUNT=${ADAPTER_PORT_COUNT}
   )
   if(ADAPTER_LED_RGB_ORDER)
     target_compile_definitions(${PROJECT_NAME} PRIVATE ADAPTER_LED_RGB_ORDER=1)

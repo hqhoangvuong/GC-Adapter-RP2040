@@ -18,16 +18,22 @@
     #define ADAPTER_GC_PIN_BASE 22
 #endif
 
-#if (ADAPTER_GC_PIN_BASE < 0) || (ADAPTER_GC_PIN_BASE > 26)
-    #error "ADAPTER_GC_PIN_BASE must be 0-26 (ports use BASE..BASE+3)"
+// Last GC data pin in use
+#define ADAPTER_GC_PIN_LAST (ADAPTER_GC_PIN_BASE + ADAPTER_PORT_COUNT - 1)
+
+#if (ADAPTER_PORT_COUNT < 1) || (ADAPTER_PORT_COUNT > 4)
+    #error "ADAPTER_PORT_COUNT must be 1-4"
 #endif
-#if (UTIL_RGB_PIN >= ADAPTER_GC_PIN_BASE) && (UTIL_RGB_PIN <= ADAPTER_GC_PIN_BASE + 3)
+#if (ADAPTER_GC_PIN_BASE < 0) || (ADAPTER_GC_PIN_LAST > 29)
+    #error "GC data pins must lie within GP0-GP29"
+#endif
+#if (UTIL_RGB_PIN >= ADAPTER_GC_PIN_BASE) && (UTIL_RGB_PIN <= ADAPTER_GC_PIN_LAST)
     #error "GC data pins overlap the RGB LED pin"
 #endif
-#if (ADAPTER_BUTTON_1 >= ADAPTER_GC_PIN_BASE) && (ADAPTER_BUTTON_1 <= ADAPTER_GC_PIN_BASE + 3)
+#if (ADAPTER_BUTTON_1 >= ADAPTER_GC_PIN_BASE) && (ADAPTER_BUTTON_1 <= ADAPTER_GC_PIN_LAST)
     #error "GC data pins overlap ADAPTER_BUTTON_1"
 #endif
-#if (ADAPTER_BUTTON_2 >= ADAPTER_GC_PIN_BASE) && (ADAPTER_BUTTON_2 <= ADAPTER_GC_PIN_BASE + 3)
+#if (ADAPTER_BUTTON_2 >= ADAPTER_GC_PIN_BASE) && (ADAPTER_BUTTON_2 <= ADAPTER_GC_PIN_LAST)
     #error "GC data pins overlap ADAPTER_BUTTON_2"
 #endif
 
@@ -36,8 +42,5 @@
 
 #define JOYBUS_PIO pio0
 
-// The joybus PIO program drives four consecutive pins
+// The joybus PIO program drives ADAPTER_PORT_COUNT consecutive pins
 #define JOYBUS_PORT_1 (ADAPTER_GC_PIN_BASE)
-#define JOYBUS_PORT_2 (ADAPTER_GC_PIN_BASE + 1)
-#define JOYBUS_PORT_3 (ADAPTER_GC_PIN_BASE + 2)
-#define JOYBUS_PORT_4 (ADAPTER_GC_PIN_BASE + 3)
