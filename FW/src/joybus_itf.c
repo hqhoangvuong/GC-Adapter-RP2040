@@ -148,6 +148,11 @@ void _gc_port_data(uint port)
                 return;
             }
         }
+
+        // A good reply ends any run of misses, so only 10 misses
+        // in a row count as an unplug
+        port_reset_timer[port] = 0;
+
         _port_joybus[port].byte_1 = _port_inputs[port][0];
         _port_joybus[port].byte_2 = _port_inputs[port][1];
 
