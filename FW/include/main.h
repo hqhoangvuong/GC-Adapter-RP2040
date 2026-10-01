@@ -36,6 +36,27 @@
 #if (ADAPTER_BUTTON_2 >= ADAPTER_GC_PIN_BASE) && (ADAPTER_BUTTON_2 <= ADAPTER_GC_PIN_LAST)
     #error "GC data pins overlap ADAPTER_BUTTON_2"
 #endif
+#if (ADAPTER_BUTTON_1 == UTIL_RGB_PIN)
+    #error "The button pin is the RGB LED pin"
+#endif
+
+#if defined(ADAPTER_OLED)
+    // Each I2C block owns pin pairs in turn: GP0/1 I2C0, GP2/3 I2C1, GP4/5
+    // I2C0 and so on. SDA is the even pin of a pair, SCL the odd one.
+    #if ((ADAPTER_OLED_SDA) % 2 != 0) || ((ADAPTER_OLED_SCL) != (ADAPTER_OLED_SDA) + 1) || ((ADAPTER_OLED_SCL) > 29)
+        #error "OLED SDA must be an even GPIO and SCL the next one (e.g. GP4 and GP5)"
+    #endif
+    #define OLED_I2C ((((ADAPTER_OLED_SDA) / 2) % 2) ? i2c1 : i2c0)
+    #if ((ADAPTER_OLED_SCL) >= ADAPTER_GC_PIN_BASE) && ((ADAPTER_OLED_SDA) <= ADAPTER_GC_PIN_LAST)
+        #error "OLED pins overlap the GC data pins"
+    #endif
+    #if ((ADAPTER_OLED_SDA) == UTIL_RGB_PIN) || ((ADAPTER_OLED_SCL) == UTIL_RGB_PIN)
+        #error "OLED pins overlap the RGB LED pin"
+    #endif
+    #if ((ADAPTER_OLED_SDA) == ADAPTER_BUTTON_1) || ((ADAPTER_OLED_SCL) == ADAPTER_BUTTON_1)
+        #error "OLED pins overlap the button pin"
+    #endif
+#endif
 
 #define UTIL_RGB_COUNT 4
 #define UTIL_RGBW_EN 0

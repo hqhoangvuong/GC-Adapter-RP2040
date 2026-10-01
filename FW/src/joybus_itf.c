@@ -1,4 +1,5 @@
 #include "main.h"
+#include "joybus_status.h"
 
 #define CLAMP_0_255(value) ((value) < 0 ? 0 : ((value) > 255 ? 255 : (value)))
 
@@ -40,6 +41,11 @@ typedef struct
 } analog_offset_s;
 
 analog_offset_s _port_offsets[4] = {0};
+
+// Published copy of each port for core 1. _status_seq is odd while core 0
+// is writing, so a reader retries instead of using a half-written copy.
+static joybus_port_status_s _port_status[4] = {0};
+static volatile uint32_t _status_seq = 0;
 
 uint read_count = 0;
 
@@ -125,6 +131,15 @@ void _gc_port_data(uint port)
         }
 
         _port_joybus[port].port_itf = tmp_itf;
+
+        _port_status[port].origin_lx = _port_joybus[port].stick_left_x;
+        _port_status[port].origin_ly = _port_joybus[port].stick_left_y;
+        _port_status[port].origin_rx = _port_joybus[port].stick_right_x;
+        _port_status[port].origin_ry = _port_joybus[port].stick_right_y;
+        _port_status[port].origin_lt = _port_joybus[port].analog_trigger_l;
+        _port_status[port].origin_rt = _port_joybus[port].analog_trigger_r;
+        _port_status[port].misses = 0;
+        _port_status[port].connect_time = time_us_32();
     }
     else if (_port_phases[port] == 2)
     {
@@ -139,8 +154,10 @@ void _gc_port_data(uint port)
             else
             {   
                 port_reset_timer[port] += 1;
+                _port_status[port].misses += 1;
                 if(port_reset_timer[port]>=10)
                 {
+                    _port_status[port].drops += 1;
                     _gc_port_reset(port);
                     port_reset_timer[port] = 0;
                 }
@@ -152,6 +169,7 @@ void _gc_port_data(uint port)
         // A good reply ends any run of misses, so only 10 misses
         // in a row count as an unplug
         port_reset_timer[port] = 0;
+        _port_status[port].reads += 1;
 
         _port_joybus[port].byte_1 = _port_inputs[port][0];
         _port_joybus[port].byte_2 = _port_inputs[port][1];
@@ -175,12 +193,45 @@ void _gc_port_data(uint port)
     }
 }
 
+void _gamecube_publish_status()
+{
+    _status_seq++;
+    __dmb();
+    for (uint i = 0; i < ADAPTER_PORT_COUNT; i++)
+    {
+        _port_status[i].input = _port_joybus[i];
+        _port_status[i].rumble = _port_rumble[i];
+    }
+    __dmb();
+    _status_seq++;
+}
+
+void joybus_itf_get_status(uint port, joybus_port_status_s *out)
+{
+    if (port >= ADAPTER_PORT_COUNT)
+    {
+        memset(out, 0, sizeof(*out));
+        out->input.port_itf = -1;
+        return;
+    }
+
+    uint32_t seq;
+    do
+    {
+        seq = _status_seq;
+        __dmb();
+        *out = _port_status[port];
+        __dmb();
+    } while ((seq & 1) || (seq != _status_seq));
+}
+
 void _gamecube_get_data()
 {
     for (uint i = 0; i < ADAPTER_PORT_COUNT; i++)
     {
         _gc_port_data(i);
     }
+    _gamecube_publish_status();
 }
 
 void _gamecube_send_probe()
@@ -256,6 +307,7 @@ void joybus_itf_init()
     {
         memset(&_port_joybus[i], 0, sizeof(joybus_input_s));
         _port_joybus[i].port_itf = -1;
+        _port_status[i].input.port_itf = -1;
     }
 
     joybus_program_init(JOYBUS_PIO, _gamecube_offset + joybus_offset_joybusout, JOYBUS_PORT_1, ADAPTER_PORT_COUNT, _gamecube_c);

@@ -1,5 +1,10 @@
 #include "main.h"
 
+#if defined(ADAPTER_BOARD_RP2040_ZERO)
+#include "display.h"
+#include "ui_button.h"
+#endif
+
 bool cb_adapter_hardware_test()
 {
     adapter_ll_hardware_setup();
@@ -11,6 +16,9 @@ bool cb_adapter_hardware_test()
     {
         if(!adapter_ll_gpio_read(JOYBUS_PORT_1 + i))
         {
+            #if defined(ADAPTER_BOARD_RP2040_ZERO)
+            if(!gpio_fail) display_set_fault_pullup(JOYBUS_PORT_1 + i);
+            #endif
             gpio_fail=true;
         }
     }
@@ -39,6 +47,14 @@ bool cb_adapter_hardware_test()
 
 int main()
 {
+#if defined(ADAPTER_BOARD_RP2040_ZERO)
+    // The OLED task starts first so it can report a failed self-test
+    display_start();
+    adapter_main_init();
+    display_set_ready();
+    ui_main_loop();
+#else
     adapter_main_init();
     adapter_main_loop();
+#endif
 }

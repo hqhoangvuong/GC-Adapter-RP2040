@@ -34,6 +34,13 @@ if(ADAPTER_BOARD STREQUAL "rp2040_zero")
   set(ADAPTER_GC_PIN_BASE 26 CACHE STRING "First GC data GPIO (ports use consecutive pins from here)")
   set(ADAPTER_PORT_COUNT 4 CACHE STRING "Number of GC ports, 1-4")
   option(ADAPTER_LED_RGB_ORDER "Onboard LED takes RGB instead of GRB byte order" OFF)
+  # Single mode/screen button, wired from this GPIO to GND
+  set(ADAPTER_BUTTON_PIN 12 CACHE STRING "Button GPIO")
+  # Optional SSD1306 128x32 I2C OLED. The adapter runs normally without one.
+  option(ADAPTER_OLED "Drive an SSD1306 128x32 OLED from core 1" ON)
+  set(ADAPTER_OLED_SDA 4 CACHE STRING "OLED SDA GPIO")
+  set(ADAPTER_OLED_SCL 5 CACHE STRING "OLED SCL GPIO")
+  option(ADAPTER_OLED_FLIP "Rotate the OLED picture 180 degrees" OFF)
 elseif(ADAPTER_BOARD STREQUAL "gcp2")
   set(PICO_BOARD pico CACHE STRING "Board type")
 else()
@@ -125,7 +132,21 @@ if(ADAPTER_BOARD STREQUAL "rp2040_zero")
     ADAPTER_BOARD_RP2040_ZERO=1
     ADAPTER_GC_PIN_BASE=${ADAPTER_GC_PIN_BASE}
     ADAPTER_PORT_COUNT=${ADAPTER_PORT_COUNT}
+    ADAPTER_BUTTON_PIN=${ADAPTER_BUTTON_PIN}
   )
+  target_sources(${PROJECT_NAME} PRIVATE src/ui_button.c)
+  if(ADAPTER_OLED)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE
+      ADAPTER_OLED=1
+      ADAPTER_OLED_SDA=${ADAPTER_OLED_SDA}
+      ADAPTER_OLED_SCL=${ADAPTER_OLED_SCL}
+    )
+    if(ADAPTER_OLED_FLIP)
+      target_compile_definitions(${PROJECT_NAME} PRIVATE ADAPTER_OLED_FLIP=1)
+    endif()
+    target_sources(${PROJECT_NAME} PRIVATE src/oled_ssd1306.c src/display.c)
+    target_link_libraries(${PROJECT_NAME} PRIVATE hardware_i2c)
+  endif()
   if(ADAPTER_LED_RGB_ORDER)
     target_compile_definitions(${PROJECT_NAME} PRIVATE ADAPTER_LED_RGB_ORDER=1)
   endif()

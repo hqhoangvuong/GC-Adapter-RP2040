@@ -40,6 +40,10 @@ Build options:
 | `ADAPTER_GC_PIN_BASE` | `26` | First GC data pin. Further ports use the following pins. |
 | `ADAPTER_GENERIC_FLASH_BOOT` | `OFF` | Use the generic flash boot stage |
 | `ADAPTER_LED_RGB_ORDER` | `OFF` | Turn on if the LED shows red and green swapped |
+| `ADAPTER_BUTTON_PIN` | `12` | GPIO of the single control button |
+| `ADAPTER_OLED` | `ON` | Drive an SSD1306 128×32 OLED. The firmware runs fine without one fitted. |
+| `ADAPTER_OLED_SDA` / `ADAPTER_OLED_SCL` | `4` / `5` | OLED I2C pins: SDA an even GPIO, SCL the next one |
+| `ADAPTER_OLED_FLIP` | `OFF` | Rotate the OLED picture 180° |
 
 ## Pins used
 
@@ -49,8 +53,9 @@ Build options:
 | GP27 | Port 2 data (4-port build only) |
 | GP28 | Port 3 data (4-port build only) |
 | GP29 | Port 4 data (4-port build only) |
-| GP11 | Mode button "back" (to GND) |
-| GP12 | Mode button "forward" (to GND) |
+| GP12 | Control button (to GND) |
+| GP4 | OLED SDA (optional) |
+| GP5 | OLED SCL (optional) |
 | GP16 | Onboard RGB LED (already on the board) |
 | 3V3 | Controller 3.3 V and the data pull-ups |
 | 5V | Controller rumble supply (this is the USB 5 V) |
@@ -117,29 +122,70 @@ them.**
    for 1 second.
 4. Flash `gc_adapter_rp2040_zero_1port.uf2` (or the 4-port file).
 
-## Buttons (optional but recommended)
+## Button (optional but recommended)
 
-Each button connects its pin to GND. Without buttons the adapter stays in its
-default mode, Switch Pro Controller.
+One button, from GP12 to GND, controls everything. Without it the adapter
+stays in its default mode, Switch Pro Controller.
 
 ```
-  GP11 ──── [button] ──── GND     (back)
-  GP12 ──── [button] ──── GND     (forward)
+  GP12 ──── [button] ──── GND
 ```
 
 - Use any momentary push button. No resistor is needed: the firmware turns
-  on the chip's internal pull-ups, and it samples the buttons every 16 ms,
-  which also removes contact bounce.
+  on the chip's internal pull-up and debounces the button.
 - On a 4-pin tactile switch, use two **diagonally opposite** legs. Legs on
   the same long side are already joined inside, so a button wired across
   them would read as always pressed.
-- Mode order going forward: Switch Pro → XInput → GameCube adapter →
-  Slippi → back to Switch Pro. The adapter reboots into the new mode.
 
-- GP11 press and release: previous mode. GP12 press and release: next mode.
-- Both together, then release: save the current mode as the default.
-- Mode changes only work while **no controller is plugged in**.
-- Holding either button while plugging in USB enters BOOTSEL (firmware update).
+| Situation | Click | Hold 1 s |
+|---|---|---|
+| No controller plugged in | Next mode. The adapter reboots into it. | Save the current mode as the default (the OLED shows **SAVED**) |
+| Controller connected | Next OLED screen | Nothing |
+
+- Mode order: Switch Pro → XInput → GameCube adapter → Slippi → back to
+  Switch Pro.
+- Modes never change while a controller is connected, because the reboot
+  would drop it mid-game. Unplug the controller first.
+- Holding the button while plugging in USB enters BOOTSEL (firmware update).
+- GP11 is no longer used. A button still wired there is simply ignored.
+
+## OLED display (optional)
+
+A 0.91″ 128×32 SSD1306 I2C module (4 pins: GND, VCC, SCL, SDA).
+
+| OLED pin | RP2040-Zero |
+|---|---|
+| GND | GND |
+| VCC | 3V3 |
+| SCL | GP5 |
+| SDA | GP4 |
+
+The module's I2C address can be 0x3C or 0x3D; both are found automatically.
+The module carries its own pull-up resistors, so nothing else is needed. You
+can fit or remove the display at any time; the adapter looks for it once a
+second.
+
+The display runs on the RP2040's second core. Drawing a frame takes about
+13 ms over I2C, so on the main core it would delay controller polling.
+
+Screens:
+
+- **Idle** (no controller): the mode in large letters, USB state
+  (`connected`, `no host` for a power-only port, or `suspended`), the USB
+  report rate, and `No controller`.
+- With a controller connected, a click cycles through:
+  1. **Live**: both sticks, analog triggers with L/R digital presses,
+     A B X Y Z Start, the D-pad and rumble (`RMB` lights while rumbling).
+  2. **Rest position**: the stick and trigger values the controller reported
+     when it was plugged in, and their offset from centre (128). The adapter
+     treats these as centre, so large numbers mean a stick was touched while
+     plugging in. Replug without touching the sticks to fix it.
+  3. **Status**: mode, USB state, good controller reads per second, missed
+     reads, drops (times the controller stopped answering) and time
+     connected.
+- **SELF-TEST FAILED** at first boot names the data pin with no pull-up.
+
+If the picture is upside down, build with `-DADAPTER_OLED_FLIP=ON`.
 
 ## LED
 
