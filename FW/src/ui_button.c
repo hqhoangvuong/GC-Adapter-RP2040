@@ -1,6 +1,7 @@
 #include "main.h"
 #include "display.h"
 #include "ui_button.h"
+#include "hardware/sync.h"
 
 // One button, wired from ADAPTER_BUTTON_PIN to GND:
 //   No controller:        click = next mode (the adapter reboots into it)
@@ -14,6 +15,7 @@
 
 // From the common code
 extern volatile bool _save_flag;
+extern adapter_settings_s *_mem_settings_ptr;
 extern joybus_input_s *_adapter_joybus_inputs;
 void adapter_comms_task(uint32_t timestamp);
 
@@ -98,6 +100,15 @@ static void _ui_button_task(uint32_t timestamp)
     }
 }
 
+// Settings location; must match FLASH_TARGET_OFFSET in
+// common/ll/adapter_ll_rp2040.c, which loads them at boot
+#define UI_SETTINGS_FLASH_OFFSET ((1200 * 1024) + FLASH_SECTOR_SIZE)
+
+// The common adapter_ll_save_check() builds this page on the stack. Core 0
+// has a 2 KB stack, so that 4 KB buffer runs into core 1's stack just below
+// it and crashes the OLED task. A static buffer keeps it in normal RAM.
+static uint8_t _ui_save_page[FLASH_SECTOR_SIZE];
+
 // Write pending settings to flash. Core 1 runs from flash too, so it has
 // to be parked in RAM while the flash is busy.
 static void _ui_save_check()
@@ -105,14 +116,24 @@ static void _ui_save_check()
     if (!_save_flag)
         return;
 
+    static_assert(sizeof(adapter_settings_s) <= FLASH_SECTOR_SIZE);
+    memset(_ui_save_page, 0, sizeof(_ui_save_page));
+    memcpy(_ui_save_page, _mem_settings_ptr, sizeof(adapter_settings_s));
+
     bool pause_core1 = display_running();
     if (pause_core1)
         multicore_lockout_start_blocking();
 
-    adapter_ll_save_check();
+    uint32_t ints = save_and_disable_interrupts();
+    flash_range_erase(UI_SETTINGS_FLASH_OFFSET, FLASH_SECTOR_SIZE);
+    flash_range_program(UI_SETTINGS_FLASH_OFFSET, _ui_save_page, FLASH_SECTOR_SIZE);
+    restore_interrupts(ints);
 
     if (pause_core1)
         multicore_lockout_end_blocking();
+
+    webusb_save_confirm();
+    _save_flag = false;
 }
 
 void ui_main_loop()
