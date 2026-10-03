@@ -2,11 +2,13 @@
 #include "display.h"
 #include "oled_ssd1306.h"
 #include "joybus_status.h"
+#include "hardware/sync.h"
 
 // The OLED runs entirely on core 1. A full frame takes about 13 ms on the
 // I2C bus, far longer than one controller poll, so it must stay off core 0.
 // Core 1 only reads published state; core 0 never waits on it, except
-// while saving settings to flash (see ui_button.c).
+// while saving settings to flash, for at most the frame in flight (see
+// ui_button.c).
 
 #define DISPLAY_FRAME_US   66000    // about 15 frames per second
 #define DISPLAY_RETRY_US   1000000  // look for a missing display this often
@@ -381,19 +383,28 @@ static void _core1_entry()
     {
         uint32_t frame_start = time_us_32();
 
+        uint32_t rate = _measure_reads(frame_start);
+
+        if (present)
+            _render(rate);
+
+        // Interrupts stay off while bytes go out. That keeps core 0's
+        // flash-save pause (an interrupt) from stopping this core in the
+        // middle of a transfer; the pause waits for the frame to finish.
+        uint32_t ints = save_and_disable_interrupts();
+
         if (!present && (frame_start - last_try >= DISPLAY_RETRY_US))
         {
             last_try = frame_start;
             present = oled_init();
+            if (present)
+                _render(rate);
         }
-
-        uint32_t rate = _measure_reads(frame_start);
 
         if (present)
-        {
-            _render(rate);
             present = oled_present(_fb);
-        }
+
+        restore_interrupts(ints);
 
         while (time_us_32() - frame_start < DISPLAY_FRAME_US)
             tight_loop_contents();

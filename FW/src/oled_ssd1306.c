@@ -15,7 +15,15 @@ static bool _oled_write(const uint8_t *buf, size_t len)
 {
     // Allow about twice the time the bytes need at 400 kHz
     uint32_t timeout = 1000 + len * 50;
-    return i2c_write_timeout_us(OLED_I2C, _oled_addr, buf, len, false, timeout) == (int)len;
+    if (i2c_write_timeout_us(OLED_I2C, _oled_addr, buf, len, false, timeout) == (int)len)
+        return true;
+
+    // On a timeout the SDK returns without sending STOP, which leaves the
+    // display in the middle of a transfer: the next frame's bytes would land
+    // as pixel data in the wrong place. Resetting the I2C block frees the
+    // bus, and the next START makes the display listen afresh.
+    i2c_init(OLED_I2C, OLED_I2C_HZ);
+    return false;
 }
 
 static bool _oled_cmds(const uint8_t *cmds, size_t len)
