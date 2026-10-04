@@ -14,6 +14,25 @@
 #define DISPLAY_RETRY_US   1000000  // look for a missing display this often
 #define DISPLAY_MESSAGE_US 1500000
 
+// Burn-in protection: OLED pixels wear where they stay lit. Only the idle
+// screen is static for long, so it dims and then switches off.
+#define DISPLAY_DIM_US     (60u * 1000000u)
+#define DISPLAY_OFF_US     (600u * 1000000u)
+#define DISPLAY_CONTRAST_DIM  0x01
+
+typedef enum
+{
+    BRIGHTNESS_FULL,
+    BRIGHTNESS_DIM,
+    BRIGHTNESS_OFF,
+} brightness_t;
+
+typedef enum
+{
+    MESSAGE_SAVED,
+    MESSAGE_RECENTERED,
+} message_t;
+
 typedef enum
 {
     SCREEN_LIVE,
@@ -32,6 +51,9 @@ static volatile int _fault_pin = -1;
 static volatile uint32_t _message_start = 0;
 static volatile bool _message_active = false;
 static volatile input_mode_t _message_mode = INPUT_MODE_SWPRO;
+static volatile message_t _message = MESSAGE_SAVED;
+static volatile uint32_t _activity_time = 0;
+static volatile bool _asleep = false;
 
 static uint8_t _fb[OLED_FB_SIZE];
 
@@ -280,6 +302,20 @@ static void _screen_saved(input_mode_t mode)
     _text(0, 25, name, 1, true);
 }
 
+static void _screen_recentered()
+{
+    _text((OLED_WIDTH - _text_width("CENTERED", 2)) / 2, 0, "CENTERED", 2, true);
+    _text(0, 17, "Stick center reset", 1, true);
+    _text(0, 25, "by X+Y+Start", 1, true);
+}
+
+static void _show_message(message_t msg)
+{
+    _message = msg;
+    _message_start = time_us_32();
+    _message_active = true;
+}
+
 static void _screen_fault(int pin)
 {
     char line[24];
@@ -292,34 +328,53 @@ static void _screen_fault(int pin)
 
 /* ---- Core 1 ---- */
 
-static void _render(uint32_t reads_per_s)
+// Draw the current screen. Returns true for the idle screen, the only
+// one that dims.
+static bool _render(uint32_t reads_per_s)
 {
     memset(_fb, 0, sizeof(_fb));
 
     if (_fault_pin >= 0)
     {
         _screen_fault(_fault_pin);
-        return;
+        return false;
     }
 
     if (!_ready)
     {
         _text(0, 12, "Starting...", 1, true);
-        return;
+        return false;
+    }
+
+    // A new X+Y+Start reset on any port shows a confirmation
+    static uint32_t recenters_seen = 0;
+    uint32_t recenters = 0;
+    joybus_port_status_s st;
+    for (uint i = 0; i < ADAPTER_PORT_COUNT; i++)
+    {
+        joybus_itf_get_status(i, &st);
+        recenters += st.recenters;
+    }
+    if (recenters != recenters_seen)
+    {
+        recenters_seen = recenters;
+        _show_message(MESSAGE_RECENTERED);
     }
 
     if (_message_active)
     {
         if (time_us_32() - _message_start < DISPLAY_MESSAGE_US)
         {
-            _screen_saved(_message_mode);
-            return;
+            if (_message == MESSAGE_RECENTERED)
+                _screen_recentered();
+            else
+                _screen_saved(_message_mode);
+            return false;
         }
         _message_active = false;
     }
 
     // Show the first connected port
-    joybus_port_status_s st;
     for (uint i = 0; i < ADAPTER_PORT_COUNT; i++)
     {
         joybus_itf_get_status(i, &st);
@@ -332,11 +387,12 @@ static void _render(uint32_t reads_per_s)
             case SCREEN_ORIGIN: _screen_origin(&st, i); break;
             case SCREEN_STATUS: _screen_status(&st, reads_per_s); break;
             }
-            return;
+            return false;
         }
     }
 
     _screen_idle();
+    return true;
 }
 
 // Good reads per second on the first connected port
@@ -378,6 +434,9 @@ static void _core1_entry()
 
     bool present = false;
     uint32_t last_try = time_us_32() - DISPLAY_RETRY_US;
+    brightness_t brightness = BRIGHTNESS_FULL;
+    bool idle = false;
+    _activity_time = time_us_32();
 
     for (;;)
     {
@@ -386,7 +445,7 @@ static void _core1_entry()
         uint32_t rate = _measure_reads(frame_start);
 
         if (present)
-            _render(rate);
+            idle = _render(rate);
 
         // Interrupts stay off while bytes go out. That keeps core 0's
         // flash-save pause (an interrupt) from stopping this core in the
@@ -398,11 +457,38 @@ static void _core1_entry()
             last_try = frame_start;
             present = oled_init();
             if (present)
-                _render(rate);
+            {
+                // A fresh init leaves the panel on at full brightness
+                brightness = BRIGHTNESS_FULL;
+                idle = _render(rate);
+            }
         }
 
         if (present)
-            present = oled_present(_fb);
+        {
+            if (!idle)
+                _activity_time = frame_start;
+
+            uint32_t quiet = frame_start - _activity_time;
+            brightness_t want = (quiet >= DISPLAY_OFF_US) ? BRIGHTNESS_OFF
+                              : (quiet >= DISPLAY_DIM_US) ? BRIGHTNESS_DIM
+                              : BRIGHTNESS_FULL;
+
+            if (want != brightness)
+            {
+                bool ok = oled_set_contrast((want == BRIGHTNESS_FULL) ? OLED_CONTRAST_FULL : DISPLAY_CONTRAST_DIM)
+                          && oled_set_on(want != BRIGHTNESS_OFF);
+                if (ok)
+                    brightness = want;
+                present = ok;
+            }
+
+            if (present)
+                present = oled_present(_fb);
+        }
+
+        // Only a display that is there can be asleep
+        _asleep = present && (brightness != BRIGHTNESS_FULL);
 
         restore_interrupts(ints);
 
@@ -437,8 +523,14 @@ void display_next_screen()
 void display_show_saved(input_mode_t mode)
 {
     _message_mode = mode;
-    _message_start = time_us_32();
-    _message_active = true;
+    _show_message(MESSAGE_SAVED);
+}
+
+bool display_wake()
+{
+    bool was_asleep = _asleep;
+    _activity_time = time_us_32();
+    return was_asleep;
 }
 
 void display_set_fault_pullup(uint pin)

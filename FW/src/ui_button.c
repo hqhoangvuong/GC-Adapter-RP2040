@@ -7,6 +7,7 @@
 //   No controller:        click = next mode (the adapter reboots into it)
 //                         hold  = save the current mode as the default
 //   Controller connected: click = next OLED screen
+//   Screen dimmed or off: click = wake it only
 // Holding it while plugging in USB still enters BOOTSEL.
 
 #define UI_SAMPLE_US     10000
@@ -40,6 +41,7 @@ static void _ui_button_task(uint32_t timestamp)
     static bool pressed = false;
     static bool long_done = false;
     static bool connected_at_press = false;
+    static bool wake_only = false;
     static uint32_t press_time = 0;
 
     if (!interval_run(timestamp, UI_SAMPLE_US, &sample_state))
@@ -65,6 +67,9 @@ static void _ui_button_task(uint32_t timestamp)
         long_done = false;
         press_time = timestamp;
         connected_at_press = _any_connected();
+        // A click on a dimmed or dark screen only wakes it, so you can see
+        // the mode before changing it
+        wake_only = display_wake();
     }
     else if (level && pressed)
     {
@@ -83,7 +88,7 @@ static void _ui_button_task(uint32_t timestamp)
     {
         pressed = false;
 
-        if (long_done)
+        if (long_done || wake_only)
             return;
 
         if (connected_at_press)

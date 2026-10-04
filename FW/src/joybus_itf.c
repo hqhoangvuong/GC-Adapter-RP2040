@@ -49,10 +49,72 @@ static volatile uint32_t _status_seq = 0;
 
 uint read_count = 0;
 
+// Holding X+Y+Start this long resets the stick centre, as on a GameCube
+#define RECENTER_HOLD_US 3000000
+// Least time between origin re-reads the controller asks for
+#define REORIGIN_MIN_US  1000000
+
+// Byte 0 bit 5 of a poll reply: the controller wants its origin read again
+#define JOYBUS_GET_ORIGIN(byte_1) (((byte_1) >> 29) & 1)
+
+static uint32_t _port_reorigin_time[4] = {0};
+
 void _gc_port_reset(uint port)
 {
     _port_joybus[port].port_itf = -1;
     _port_phases[port] = 0;
+    // The host can't switch the motor off for a port that has gone, so a
+    // controller plugged back in would otherwise start out rumbling
+    _port_rumble[port] = false;
+}
+
+// Treat the raw values now in _port_joybus[port] as the controller's rest
+// position: they become the stick centres and trigger zeros
+static void _gc_port_set_origin(uint port)
+{
+    _port_offsets[port].lx_offset = 128 - (int)_port_joybus[port].stick_left_x;
+    _port_offsets[port].rx_offset = 128 - (int)_port_joybus[port].stick_right_x;
+    _port_offsets[port].ly_offset = 128 - (int)_port_joybus[port].stick_left_y;
+    _port_offsets[port].ry_offset = 128 - (int)_port_joybus[port].stick_right_y;
+
+    _port_offsets[port].lt_offset = -(int)_port_joybus[port].analog_trigger_l;
+    _port_offsets[port].rt_offset = -(int)_port_joybus[port].analog_trigger_r;
+
+    _port_status[port].origin_lx = _port_joybus[port].stick_left_x;
+    _port_status[port].origin_ly = _port_joybus[port].stick_left_y;
+    _port_status[port].origin_rx = _port_joybus[port].stick_right_x;
+    _port_status[port].origin_ry = _port_joybus[port].stick_right_y;
+    _port_status[port].origin_lt = _port_joybus[port].analog_trigger_l;
+    _port_status[port].origin_rt = _port_joybus[port].analog_trigger_r;
+}
+
+// X+Y+Start held for RECENTER_HOLD_US takes the current position as the new
+// centre. Reads raw values, so call it before the offsets are applied.
+static void _gc_port_check_recenter(uint port, uint32_t now)
+{
+    static bool held[4] = {false};
+    static bool done[4] = {false};
+    static uint32_t start[4] = {0};
+
+    bool combo = _port_joybus[port].button_x && _port_joybus[port].button_y
+                 && _port_joybus[port].button_start;
+
+    if (!combo)
+    {
+        held[port] = false;
+    }
+    else if (!held[port])
+    {
+        held[port] = true;
+        done[port] = false;
+        start[port] = now;
+    }
+    else if (!done[port] && (now - start[port] >= RECENTER_HOLD_US))
+    {
+        done[port] = true;
+        _gc_port_set_origin(port);
+        _port_status[port].recenters += 1;
+    }
 }
 
 void _gc_port_data(uint port)
@@ -96,16 +158,24 @@ void _gc_port_data(uint port)
         _port_joybus[port].byte_1 = _port_inputs[port][0];
         _port_joybus[port].byte_2 = _port_inputs[port][1];
 
-        _port_offsets[port].lx_offset = 128 - (int)_port_joybus[port].stick_left_x;
-        _port_offsets[port].rx_offset = 128 - (int)_port_joybus[port].stick_right_x;
-        _port_offsets[port].ly_offset = 128 - (int)_port_joybus[port].stick_left_y;
-        _port_offsets[port].ry_offset = 128 - (int)_port_joybus[port].stick_right_y;
+        _gc_port_set_origin(port);
+        _port_reorigin_time[port] = time_us_32();
 
-        _port_offsets[port].lt_offset = -(int)_port_joybus[port].analog_trigger_l;
-        _port_offsets[port].rt_offset = -(int)_port_joybus[port].analog_trigger_r;
+        // This reply is the rest position itself, so report it as centred
+        _port_joybus[port].stick_left_x = 128;
+        _port_joybus[port].stick_left_y = 128;
+        _port_joybus[port].stick_right_x = 128;
+        _port_joybus[port].stick_right_y = 128;
+        _port_joybus[port].analog_trigger_l = 0;
+        _port_joybus[port].analog_trigger_r = 0;
 
         // Set the port phase
         _port_phases[port] = 2;
+
+        // A controller that asked for its origin again is already connected
+        // and keeps its USB interface
+        if (_port_joybus[port].port_itf > -1)
+            return;
 
         // Set the port USB Interface
         int tmp_itf = 0;
@@ -132,12 +202,6 @@ void _gc_port_data(uint port)
 
         _port_joybus[port].port_itf = tmp_itf;
 
-        _port_status[port].origin_lx = _port_joybus[port].stick_left_x;
-        _port_status[port].origin_ly = _port_joybus[port].stick_left_y;
-        _port_status[port].origin_rx = _port_joybus[port].stick_right_x;
-        _port_status[port].origin_ry = _port_joybus[port].stick_right_y;
-        _port_status[port].origin_lt = _port_joybus[port].analog_trigger_l;
-        _port_status[port].origin_rt = _port_joybus[port].analog_trigger_r;
         _port_status[port].misses = 0;
         _port_status[port].connect_time = time_us_32();
     }
@@ -173,6 +237,19 @@ void _gc_port_data(uint port)
 
         _port_joybus[port].byte_1 = _port_inputs[port][0];
         _port_joybus[port].byte_2 = _port_inputs[port][1];
+
+        uint32_t now = time_us_32();
+        _gc_port_check_recenter(port, now);
+
+        // The controller sets this after its own X+Y+Start reset (and at
+        // power-up): read its origin on the next poll. Rate-limited in case
+        // a controller leaves the flag set.
+        if (JOYBUS_GET_ORIGIN(_port_joybus[port].byte_1)
+            && (now - _port_reorigin_time[port] >= REORIGIN_MIN_US))
+        {
+            _port_reorigin_time[port] = now;
+            _port_phases[port] = 1;
+        }
 
         int lx = CLAMP_0_255(_port_joybus[port].stick_left_x + _port_offsets[port].lx_offset);
         int ly = CLAMP_0_255(_port_joybus[port].stick_left_y + _port_offsets[port].ly_offset);

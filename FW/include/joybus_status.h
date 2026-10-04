@@ -28,6 +28,8 @@ typedef struct
     uint32_t drops;
     // time_us_32() when this controller connected
     uint32_t connect_time;
+    // Times X+Y+Start reset the stick centre, since boot
+    uint32_t recenters;
 } joybus_port_status_s;
 
 void joybus_itf_get_status(uint port, joybus_port_status_s *out);

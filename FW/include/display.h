@@ -20,6 +20,11 @@ void display_next_screen();
 // Briefly confirm that the current mode was saved as the default
 void display_show_saved(input_mode_t mode);
 
+// Note user activity: the idle screen dims after a minute and switches off
+// after ten. Returns true if the screen was dimmed or off, so the caller
+// can treat that button press as "wake up" only.
+bool display_wake();
+
 // The start-up self-test found no pull-up on this GPIO
 void display_set_fault_pullup(uint pin);
 
@@ -30,6 +35,7 @@ static inline bool display_running() { return false; }
 static inline void display_set_ready() {}
 static inline void display_next_screen() {}
 static inline void display_show_saved(input_mode_t mode) { (void)mode; }
+static inline bool display_wake() { return false; }
 static inline void display_set_fault_pullup(uint pin) { (void)pin; }
 
 #endif

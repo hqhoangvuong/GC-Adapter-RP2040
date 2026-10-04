@@ -76,7 +76,7 @@ bool oled_init()
         0xA1, 0xC8, // segment remap, COM scan from the bottom
 #endif
         0xDA, 0x02, // COM pins for 128x32
-        0x81, 0x8F, // contrast
+        0x81, OLED_CONTRAST_FULL, // contrast
         0xD9, 0xF1, // precharge
         0xDB, 0x40, // VCOMH level
         0x2E,       // scrolling off
@@ -85,6 +85,18 @@ bool oled_init()
         0xAF,       // display on
     };
     return _oled_cmds(init, sizeof(init));
+}
+
+bool oled_set_contrast(uint8_t contrast)
+{
+    uint8_t cmd[2] = {0x81, contrast};
+    return _oled_cmds(cmd, sizeof(cmd));
+}
+
+bool oled_set_on(bool on)
+{
+    uint8_t cmd = on ? 0xAF : 0xAE;
+    return _oled_cmds(&cmd, 1);
 }
 
 bool oled_present(const uint8_t *fb)

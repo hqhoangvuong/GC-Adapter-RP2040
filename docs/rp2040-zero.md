@@ -141,6 +141,7 @@ stays in its default mode, Switch Pro Controller.
 |---|---|---|
 | No controller plugged in | Next mode. The adapter reboots into it. | Save the current mode as the default (the OLED shows **SAVED**) |
 | Controller connected | Next OLED screen | Nothing |
+| Screen dimmed or off | Wake the screen only (the mode stays) | Save the default as above |
 
 - Mode order: Switch Pro → XInput → GameCube adapter → Slippi → back to
   Switch Pro.
@@ -184,6 +185,31 @@ Screens:
      reads, drops (times the controller stopped answering) and time
      connected.
 - **SELF-TEST FAILED** at first boot names the data pin with no pull-up.
+- **CENTERED** confirms an X+Y+Start stick reset (see below).
+
+To protect the OLED from burn-in, the idle screen dims after 1 minute and
+switches off after 10 minutes. Plugging in a controller or pressing the
+button wakes it; that first press only wakes the screen, so you can see the
+mode before you change it. The other screens change constantly and stay at
+full brightness.
+
+## Resetting the stick centre (X+Y+Start)
+
+The adapter takes each controller's rest position when it is plugged in and
+treats it as centre. If a stick was touched at that moment, or it drifts
+later, let go of both sticks and the triggers and hold **X + Y + Start for 3
+seconds**, as on a GameCube. The adapter takes the current position as the
+new centre, and the OLED shows **CENTERED**. The rest position screen shows
+the new values.
+
+The adapter also re-reads the centre whenever the controller itself asks for
+it, which an official controller does after its own X+Y+Start reset.
+
+## Rumble after unplugging
+
+If a controller is unplugged while rumbling, the adapter now switches the
+rumble off for that port, so the controller doesn't start rumbling when it
+is plugged back in.
 
 If the picture is upside down, build with `-DADAPTER_OLED_FLIP=ON`.
 
