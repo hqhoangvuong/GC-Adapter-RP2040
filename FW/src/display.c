@@ -75,6 +75,15 @@ static volatile bool _asleep = false;
 
 static uint8_t _fb[OLED_FB_SIZE];
 
+// Time from then to now. Core 0 can stamp "then" just after this core read
+// "now"; an unsigned subtraction would then wrap to about 71 minutes, so
+// count that as no time at all.
+static uint32_t _since(uint32_t now, uint32_t then)
+{
+    int32_t d = (int32_t)(now - then);
+    return d > 0 ? (uint32_t)d : 0;
+}
+
 /* ---- 5x7 font, ASCII 0x20-0x7E, one byte per column, LSB on top ---- */
 
 static const uint8_t _font[95][5] = {
@@ -410,7 +419,7 @@ static void _screen_status(const joybus_port_status_s *st, uint32_t reads_per_s)
     snprintf(line, sizeof(line), "Miss %lu", (unsigned long)st->misses);
     _text_right(16, line);
 
-    uint32_t up = (time_us_32() - st->connect_time) / 1000000;
+    uint32_t up = _since(time_us_32(), st->connect_time) / 1000000;
     snprintf(line, sizeof(line), "Drops %lu", (unsigned long)st->drops);
     _text(0, 24, line, 1, true);
     snprintf(line, sizeof(line), "Up %lu:%02lu", (unsigned long)(up / 60), (unsigned long)(up % 60));
@@ -451,7 +460,7 @@ static void _screen_events(const joybus_port_status_s *st, uint port)
         int y = 8 + i * 8;
         _text(0, y, name, 1, true);
 
-        uint32_t ago = (now - st->event_time[i]) / 1000000;
+        uint32_t ago = _since(now, st->event_time[i]) / 1000000;
         if (ago < 60)
             snprintf(line, sizeof(line), "%lus", (unsigned long)ago);
         else if (ago < 3600)
@@ -607,7 +616,7 @@ static bool _render(uint32_t reads_per_s)
         recenters += st.recenters;
         connected |= (st.input.port_itf > -1);
         recentering |= st.recenter_pending
-                       && (now - st.recenter_drop_time < DISPLAY_RECENTER_WAIT_US);
+                       && (_since(now, st.recenter_drop_time) < DISPLAY_RECENTER_WAIT_US);
     }
     bool active = (connected != was_connected);
     was_connected = connected;
@@ -619,7 +628,7 @@ static bool _render(uint32_t reads_per_s)
 
     if (_message_active)
     {
-        if (time_us_32() - _message_start < DISPLAY_MESSAGE_US)
+        if (_since(time_us_32(), _message_start) < DISPLAY_MESSAGE_US)
         {
             if (_message == MESSAGE_RECENTERED)
                 _screen_recentered();
@@ -754,7 +763,7 @@ static void _core1_entry()
             uint8_t contrast = _contrast[level];
             uint8_t flip = g_user_settings.flip ? 1 : 0;
 
-            uint32_t quiet_s = (frame_start - _activity_time) / 1000000u;
+            uint32_t quiet_s = _since(frame_start, _activity_time) / 1000000u;
             brightness_t want = BRIGHTNESS_FULL;
             if (_sleep_off_s[sleep] && quiet_s >= _sleep_off_s[sleep])
                 want = BRIGHTNESS_OFF;

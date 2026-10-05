@@ -156,7 +156,10 @@ static void _ui_menu_task(uint32_t timestamp)
 
     joybus_input_s in;
     if (!joybus_itf_get_menu_input(&in)
-        || (timestamp - menu_last_input() >= MENU_TIMEOUT_US))
+        // Read the clock afresh: menu input this pass is stamped after
+        // timestamp, and an unsigned "timestamp - later" would wrap to a
+        // huge value and close the menu at once
+        || (time_us_32() - menu_last_input() >= MENU_TIMEOUT_US))
     {
         menu_close();
         return;
