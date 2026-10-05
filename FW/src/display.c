@@ -3,6 +3,8 @@
 #include "oled_ssd1306.h"
 #include "joybus_status.h"
 #include "hardware/sync.h"
+#include "user_settings.h"
+#include "settings_menu.h"
 
 // The OLED runs entirely on core 1. A full frame takes about 13 ms on the
 // I2C bus, far longer than one controller poll, so it must stay off core 0.
@@ -14,12 +16,15 @@
 #define DISPLAY_RETRY_US   1000000  // look for a missing display this often
 #define DISPLAY_MESSAGE_US 1500000
 
-// Burn-in protection: OLED pixels wear where they stay lit. After a minute
-// with nothing happening (no button press, no controller plugged in or
-// out, no input from the controller) the screen dims, and after ten
-// minutes it switches off.
-#define DISPLAY_DIM_US     (60u * 1000000u)
-#define DISPLAY_OFF_US     (600u * 1000000u)
+// Burn-in protection: OLED pixels wear where they stay lit. With nothing
+// happening (no button press, no controller plugged in or out, no input
+// from the controller) the screen dims, and later switches off. The menu's
+// Screen sleep setting picks the times.
+static const uint32_t _sleep_dim_s[SLEEP_COUNT] = {60, 300, 0};
+static const uint32_t _sleep_off_s[SLEEP_COUNT] = {600, 1800, 0};
+
+// Contrast for the menu's Brightness setting
+static const uint8_t _contrast[BRIGHTNESS_LEVELS] = {0x10, 0x8F, 0xFF};
 
 // How long the "reconnecting" screen may stand in for the idle screen after
 // a controller dropped during X+Y+Start (matches RECENTER_RECONNECT_US)
@@ -40,6 +45,7 @@ typedef enum
 {
     MESSAGE_SAVED,
     MESSAGE_RECENTERED,
+    MESSAGE_SETTINGS_SAVED,
 } message_t;
 
 typedef enum
@@ -49,6 +55,7 @@ typedef enum
     SCREEN_ORIGIN,
     SCREEN_STATUS,
     SCREEN_EVENTS,
+    SCREEN_SETTINGS,
     SCREEN_COUNT,
 } screen_t;
 
@@ -455,6 +462,53 @@ static void _screen_events(const joybus_port_status_s *st, uint port)
     }
 }
 
+// Entry to the menu, the last screen in the cycle
+static void _screen_settings()
+{
+    _text((OLED_WIDTH - _text_width("SETTINGS", 2)) / 2, 0, "SETTINGS", 2, true);
+    _text(0, 17, "Hold the button", 1, true);
+    _text(0, 25, "to open the menu", 1, true);
+}
+
+// The menu: a title line, then three items with the selected one inverted
+static void _screen_menu()
+{
+    char line[24];
+    uint8_t sel = menu_selected();
+
+    _text(0, 0, "SETTINGS", 1, true);
+    snprintf(line, sizeof(line), "%u/%u", sel + 1, MENU_ITEM_COUNT);
+    _text_right(0, line);
+
+    // Keep the selection in view, as the middle row where possible
+    int first = (int)sel - 1;
+    if (first > MENU_ITEM_COUNT - 3)
+        first = MENU_ITEM_COUNT - 3;
+    if (first < 0)
+        first = 0;
+
+    for (int row = 0; row < 3; row++)
+    {
+        int item = first + row;
+        int y = 8 + row * 8;
+        bool on = (item == sel);
+
+        if (on)
+            _fill(0, y, OLED_WIDTH, 8, true);
+
+        _text(1, y, g_menu_items[item].name, 1, !on);
+        const char *value = menu_value_name(item);
+        if (value)
+            _text(OLED_WIDTH - 1 - _text_width(value, 1), y, value, 1, !on);
+    }
+}
+
+static void _screen_settings_saved()
+{
+    _text((OLED_WIDTH - _text_width("SAVED", 2)) / 2, 0, "SAVED", 2, true);
+    _text(0, 17, "Settings stored", 1, true);
+}
+
 static void _screen_saved(input_mode_t mode)
 {
     _text((OLED_WIDTH - _text_width("SAVED", 2)) / 2, 0, "SAVED", 2, true);
@@ -569,11 +623,19 @@ static bool _render(uint32_t reads_per_s)
         {
             if (_message == MESSAGE_RECENTERED)
                 _screen_recentered();
+            else if (_message == MESSAGE_SETTINGS_SAVED)
+                _screen_settings_saved();
             else
                 _screen_saved(_message_mode);
             return true;
         }
         _message_active = false;
+    }
+
+    if (menu_is_open())
+    {
+        _screen_menu();
+        return true;
     }
 
     // Show the first connected port
@@ -590,6 +652,7 @@ static bool _render(uint32_t reads_per_s)
             case SCREEN_ORIGIN: _screen_origin(&st, i); break;
             case SCREEN_STATUS: _screen_status(&st, reads_per_s); break;
             case SCREEN_EVENTS: _screen_events(&st, i); break;
+            case SCREEN_SETTINGS: _screen_settings(); break;
             }
             return _input_activity(&st.input) || active;
         }
@@ -647,6 +710,9 @@ static void _core1_entry()
     bool present = false;
     uint32_t last_try = time_us_32() - DISPLAY_RETRY_US;
     brightness_t brightness = BRIGHTNESS_FULL;
+    // Panel settings as last sent; 0xFF forces a send
+    uint8_t sent_contrast = 0xFF;
+    uint8_t sent_flip = 0xFF;
     bool active = false;
     _activity_time = time_us_32();
 
@@ -672,6 +738,8 @@ static void _core1_entry()
             {
                 // A fresh init leaves the panel on at full brightness
                 brightness = BRIGHTNESS_FULL;
+                sent_contrast = 0xFF;
+                sent_flip = 0xFF;
                 active = _render(rate);
             }
         }
@@ -681,17 +749,33 @@ static void _core1_entry()
             if (active)
                 _activity_time = frame_start;
 
-            uint32_t quiet = frame_start - _activity_time;
-            brightness_t want = (quiet >= DISPLAY_OFF_US) ? BRIGHTNESS_OFF
-                              : (quiet >= DISPLAY_DIM_US) ? BRIGHTNESS_DIM
-                              : BRIGHTNESS_FULL;
+            uint8_t sleep = g_user_settings.sleep < SLEEP_COUNT ? g_user_settings.sleep : SLEEP_1MIN;
+            uint8_t level = g_user_settings.brightness < BRIGHTNESS_LEVELS ? g_user_settings.brightness : BRIGHTNESS_MEDIUM;
+            uint8_t contrast = _contrast[level];
+            uint8_t flip = g_user_settings.flip ? 1 : 0;
 
-            if (want != brightness)
+            uint32_t quiet_s = (frame_start - _activity_time) / 1000000u;
+            brightness_t want = BRIGHTNESS_FULL;
+            if (_sleep_off_s[sleep] && quiet_s >= _sleep_off_s[sleep])
+                want = BRIGHTNESS_OFF;
+            else if (_sleep_dim_s[sleep] && quiet_s >= _sleep_dim_s[sleep])
+                want = BRIGHTNESS_DIM;
+
+            if (flip != sent_flip)
             {
-                bool ok = oled_set_dim(want != BRIGHTNESS_FULL)
+                present = oled_set_flip(flip);
+                sent_flip = flip;
+            }
+
+            if (present && (want != brightness || contrast != sent_contrast))
+            {
+                bool ok = oled_set_brightness(contrast, want != BRIGHTNESS_FULL)
                           && oled_set_on(want != BRIGHTNESS_OFF);
                 if (ok)
+                {
                     brightness = want;
+                    sent_contrast = contrast;
+                }
                 present = ok;
             }
 
@@ -730,6 +814,16 @@ void display_set_ready()
 bool display_on_range_screen()
 {
     return _screen == SCREEN_RANGE;
+}
+
+bool display_on_settings_screen()
+{
+    return _screen == SCREEN_SETTINGS;
+}
+
+void display_show_settings_saved()
+{
+    _show_message(MESSAGE_SETTINGS_SAVED);
 }
 
 void display_next_screen()

@@ -1,5 +1,9 @@
 #include "main.h"
 #include "joybus_status.h"
+#if defined(ADAPTER_BOARD_RP2040_ZERO)
+#include "user_settings.h"
+#include "settings_menu.h"
+#endif
 
 #define CLAMP_0_255(value) ((value) < 0 ? 0 : ((value) > 255 ? 255 : (value)))
 
@@ -66,6 +70,9 @@ uint read_count = 0;
 #define RECENTER_DROP_HOLD_US 1000000
 
 static uint32_t _port_reorigin_time[4] = {0};
+
+// Inputs before the menu settings were applied, for menu navigation
+static joybus_input_s _port_menu_input[4] = {0};
 
 // Consecutive missed reads
 static uint8_t _port_miss_run[4] = {0};
@@ -372,7 +379,39 @@ void _gc_port_data(uint port)
 
         _gc_port_range_track(port, JOYBUS_RANGE_MAIN, (uint8_t)lx, (uint8_t)ly);
         _gc_port_range_track(port, JOYBUS_RANGE_C, (uint8_t)rx, (uint8_t)ry);
+
+        _port_menu_input[port] = _port_joybus[port];
+
+#if defined(ADAPTER_BOARD_RP2040_ZERO)
+        if (menu_is_open())
+        {
+            // The controller drives the menu, so the game sees it at rest
+            _port_joybus[port].byte_1 = 0;
+            _port_joybus[port].byte_2 = 0;
+            _port_joybus[port].stick_left_x = 128;
+            _port_joybus[port].stick_left_y = 128;
+            _port_joybus[port].stick_right_x = 128;
+            _port_joybus[port].stick_right_y = 128;
+        }
+        else
+        {
+            user_settings_apply_input(&_port_joybus[port]);
+        }
+#endif
     }
+}
+
+bool joybus_itf_get_menu_input(joybus_input_s *out)
+{
+    for (uint i = 0; i < ADAPTER_PORT_COUNT; i++)
+    {
+        if (_port_joybus[i].port_itf > -1)
+        {
+            *out = _port_menu_input[i];
+            return true;
+        }
+    }
+    return false;
 }
 
 void _gamecube_publish_status()

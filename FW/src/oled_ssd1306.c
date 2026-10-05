@@ -78,11 +78,7 @@ bool oled_init()
         0x40,       // start line 0
         0x8D, 0x14, // charge pump on
         0x20, 0x00, // horizontal addressing
-#if defined(ADAPTER_OLED_FLIP)
-        0xA0, 0xC0, // segment and COM scan not remapped (rotated 180)
-#else
-        0xA1, 0xC8, // segment remap, COM scan from the bottom
-#endif
+        0xA1, 0xC8, // segment remap, COM scan from the bottom (see oled_set_flip)
         0xDA, 0x02, // COM pins for 128x32
         0x81, OLED_CONTRAST_FULL, // contrast
         0xD9, OLED_PRECHARGE_FULL, // precharge
@@ -95,13 +91,20 @@ bool oled_init()
     return _oled_cmds(init, sizeof(init));
 }
 
-bool oled_set_dim(bool dim)
+bool oled_set_brightness(uint8_t contrast, bool dim)
 {
     uint8_t cmd[6] = {
-        0x81, dim ? OLED_CONTRAST_DIM : OLED_CONTRAST_FULL,
+        0x81, dim ? OLED_CONTRAST_DIM : contrast,
         0xD9, dim ? OLED_PRECHARGE_DIM : OLED_PRECHARGE_FULL,
         0xDB, dim ? OLED_VCOMH_DIM : OLED_VCOMH_FULL,
     };
+    return _oled_cmds(cmd, sizeof(cmd));
+}
+
+bool oled_set_flip(bool flip)
+{
+    // Segment remap and COM scan direction together turn the picture over
+    uint8_t cmd[2] = {flip ? 0xA0 : 0xA1, flip ? 0xC0 : 0xC8};
     return _oled_cmds(cmd, sizeof(cmd));
 }
 

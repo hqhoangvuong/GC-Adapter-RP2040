@@ -3,6 +3,7 @@
 #if defined(ADAPTER_BOARD_RP2040_ZERO)
 #include "display.h"
 #include "ui_button.h"
+#include "user_settings.h"
 #endif
 
 bool cb_adapter_hardware_test()
@@ -48,6 +49,8 @@ bool cb_adapter_hardware_test()
 int main()
 {
 #if defined(ADAPTER_BOARD_RP2040_ZERO)
+    // Menu settings first: the OLED reads brightness and rotation from them
+    user_settings_load();
     // The OLED task starts first so it can report a failed self-test
     display_start();
     adapter_main_init();

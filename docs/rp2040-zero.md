@@ -43,7 +43,7 @@ Build options:
 | `ADAPTER_BUTTON_PIN` | `12` | GPIO of the single control button |
 | `ADAPTER_OLED` | `ON` | Drive an SSD1306 128×32 OLED. The firmware runs fine without one fitted. |
 | `ADAPTER_OLED_SDA` / `ADAPTER_OLED_SCL` | `4` / `5` | OLED I2C pins: SDA an even GPIO, SCL the next one |
-| `ADAPTER_OLED_FLIP` | `OFF` | Rotate the OLED picture 180° |
+| `ADAPTER_OLED_FLIP` | `OFF` | Default for the menu's *Flip screen* setting |
 
 ## Pins used
 
@@ -140,7 +140,8 @@ stays in its default mode, Switch Pro Controller.
 | Situation | Click | Hold 1 s |
 |---|---|---|
 | No controller plugged in | Next mode. The adapter reboots into it. | Save the current mode as the default (the OLED shows **SAVED**) |
-| Controller connected | Next OLED screen | Nothing (on the stick range screen: start the test again) |
+| Controller connected | Next OLED screen | On the stick range screen: start the test again. On the settings screen: open the menu. |
+| Settings menu open | Next item | Change the selected value (on *Save & exit*: close) |
 | Screen dimmed or off | Wake the screen only (the mode stays) | Save the default as above |
 
 - Mode order: Switch Pro → XInput → GameCube adapter → Slippi → back to
@@ -188,6 +189,7 @@ Screens:
   5. **Events**: the last three things that happened to the controller
      (connected, dropped, origin asked/read/failed, recentered) and how
      long ago. Useful when something odd happens, such as a reconnect.
+  6. **Settings**: hold the button here to open the settings menu.
 - **SELF-TEST FAILED** at first boot names the data pin with no pull-up.
 - **CENTERED** confirms an X+Y+Start stick reset (see below).
 
@@ -246,7 +248,40 @@ If a controller is unplugged while rumbling, the adapter now switches the
 rumble off for that port, so the controller doesn't start rumbling when it
 is plugged back in.
 
-If the picture is upside down, build with `-DADAPTER_OLED_FLIP=ON`.
+If the picture is upside down, turn on *Flip screen* in the settings menu.
+
+## Settings menu
+
+With a controller connected, click to the **Settings** screen (the last
+one) and hold the button for 1 second.
+
+| Setting | Values | What it does |
+|---|---|---|
+| Triggers | **Analog**, Digital | *Digital*: the triggers count only when clicked all the way, and then as fully pressed. In Switch mode a light press then no longer fires ZL/ZR. |
+| Deadzone | **Off**, 5, 10, 15 | Stick movement within this distance of centre (in stick units) is ignored, for sticks that drift. Applies to both sticks. |
+| Swap A/B X/Y | **Off**, On | Swaps A with B and X with Y, in every mode. |
+| Brightness | Low, **Medium**, High | Screen brightness. |
+| Flip screen | **Off**, On | Turns the picture upside down. |
+| Screen sleep | **1 min**, 5 min, Never | Time without activity before the screen dims. It switches off after 10 min (1 min setting) or 30 min (5 min setting). |
+| Save & exit | | Closes the menu. |
+
+Defaults are in bold.
+
+Moving around:
+
+- **With the controller**: D-pad up/down picks a setting, D-pad left/right
+  or A changes it, B saves and closes. A on *Save & exit* also closes.
+- **With the button**: click moves to the next setting, hold changes it.
+  Hold on *Save & exit* to close.
+
+While the menu is open, the game sees the controller at rest, so presses in
+the menu don't reach it. Changes apply straight away. When the menu closes,
+they are stored in flash and kept across restarts. The screen shows
+**SAVED** if anything changed. The menu also closes on its own after 1
+minute without input, or if the controller is unplugged.
+
+The settings live in their own flash sector, next to the adapter's mode
+setting, so neither can overwrite the other.
 
 ## LED
 

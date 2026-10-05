@@ -19,9 +19,13 @@ bool oled_init();
 // Send a whole frame. Returns false if the display stopped answering.
 bool oled_present(const uint8_t *fb);
 
-// Normal or dimmed panel. Contrast alone changes an SSD1306 very little,
-// so dimming also lowers the pixel precharge and drive voltage.
-bool oled_set_dim(bool dim);
+// Panel brightness: contrast 0-255 when awake, or dimmed. Contrast alone
+// changes an SSD1306 very little, so dimming also lowers the pixel
+// precharge and drive voltage.
+bool oled_set_brightness(uint8_t contrast, bool dim);
+
+// Rotate the picture 180 degrees. Takes effect from the next frame.
+bool oled_set_flip(bool flip);
 
 // Turn the panel on or off. RAM contents are kept while it is off.
 bool oled_set_on(bool on);

@@ -69,4 +69,9 @@ void joybus_itf_get_status(uint port, joybus_port_status_s *out);
 // Forget the recorded stick ranges on every port. Core 0 only.
 void joybus_itf_reset_range();
 
+// Inputs of the first connected port with the centre applied but before
+// the menu settings (deadzone, trigger mode, button swap), for driving the
+// settings menu. Returns false if no controller is connected. Core 0 only.
+bool joybus_itf_get_menu_input(joybus_input_s *out);
+
 #endif

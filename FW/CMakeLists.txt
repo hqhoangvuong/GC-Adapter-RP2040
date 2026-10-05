@@ -134,7 +134,7 @@ if(ADAPTER_BOARD STREQUAL "rp2040_zero")
     ADAPTER_PORT_COUNT=${ADAPTER_PORT_COUNT}
     ADAPTER_BUTTON_PIN=${ADAPTER_BUTTON_PIN}
   )
-  target_sources(${PROJECT_NAME} PRIVATE src/ui_button.c)
+  target_sources(${PROJECT_NAME} PRIVATE src/ui_button.c src/user_settings.c src/settings_menu.c)
   if(ADAPTER_OLED)
     target_compile_definitions(${PROJECT_NAME} PRIVATE
       ADAPTER_OLED=1

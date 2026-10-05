@@ -20,6 +20,12 @@ void display_next_screen();
 // True while the stick range test screen is selected
 bool display_on_range_screen();
 
+// True while the screen that opens the settings menu is selected
+bool display_on_settings_screen();
+
+// Briefly confirm that the menu settings were saved
+void display_show_settings_saved();
+
 // Briefly confirm that the current mode was saved as the default
 void display_show_saved(input_mode_t mode);
 
@@ -38,6 +44,8 @@ static inline bool display_running() { return false; }
 static inline void display_set_ready() {}
 static inline void display_next_screen() {}
 static inline bool display_on_range_screen() { return false; }
+static inline bool display_on_settings_screen() { return false; }
+static inline void display_show_settings_saved() {}
 static inline void display_show_saved(input_mode_t mode) { (void)mode; }
 static inline bool display_wake() { return false; }
 static inline void display_set_fault_pullup(uint pin) { (void)pin; }
