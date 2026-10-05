@@ -21,6 +21,10 @@
 #define DISPLAY_DIM_US     (60u * 1000000u)
 #define DISPLAY_OFF_US     (600u * 1000000u)
 
+// How long the "reconnecting" screen may stand in for the idle screen after
+// a controller dropped during X+Y+Start (matches RECENTER_RECONNECT_US)
+#define DISPLAY_RECENTER_WAIT_US 10000000
+
 // Input changes smaller than this (stick noise) don't count as activity
 #define DISPLAY_STICK_ACTIVITY   8
 #define DISPLAY_TRIGGER_ACTIVITY 24
@@ -360,6 +364,13 @@ static void _screen_recentered()
     _text(0, 25, "by X+Y+Start", 1, true);
 }
 
+static void _screen_recentering()
+{
+    _text((OLED_WIDTH - _text_width("CENTERING", 2)) / 2, 0, "CENTERING", 2, true);
+    _text(0, 17, "Controller resetting", 1, true);
+    _text(0, 25, "Let go of X+Y+Start", 1, true);
+}
+
 static void _show_message(message_t msg)
 {
     _message = msg;
@@ -423,6 +434,8 @@ static bool _render(uint32_t reads_per_s)
     // Plugging a controller in or out counts as activity
     static bool was_connected = false;
     bool connected = false;
+    bool recentering = false;
+    uint32_t now = time_us_32();
 
     // A new X+Y+Start reset on any port shows a confirmation
     static uint32_t recenters_seen = 0;
@@ -433,6 +446,8 @@ static bool _render(uint32_t reads_per_s)
         joybus_itf_get_status(i, &st);
         recenters += st.recenters;
         connected |= (st.input.port_itf > -1);
+        recentering |= st.recenter_pending
+                       && (now - st.recenter_drop_time < DISPLAY_RECENTER_WAIT_US);
     }
     bool active = (connected != was_connected);
     was_connected = connected;
@@ -471,6 +486,14 @@ static bool _render(uint32_t reads_per_s)
             }
             return _input_activity(&st.input) || active;
         }
+    }
+
+    // A controller resetting itself after X+Y+Start looks unplugged for a
+    // moment; say so instead of flashing the idle screen
+    if (recentering)
+    {
+        _screen_recentering();
+        return true;
     }
 
     _screen_idle();

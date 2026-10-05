@@ -57,10 +57,13 @@ uint read_count = 0;
 // Byte 0 bit 5 of a poll reply: the controller wants its origin read again
 #define JOYBUS_GET_ORIGIN(byte_1) (((byte_1) >> 29) & 1)
 
-// Short drop while X+Y+Start is held: an official controller resets itself
-// at 3 s and may stop answering for a moment. A reconnect this soon after
-// such a drop counts as the recentre, since connecting reads the origin.
-#define RECENTER_RECONNECT_US 3000000
+// Drop while X+Y+Start is held: the controller resets itself and stops
+// answering for a while, possibly until the buttons are let go. A reconnect
+// within this time counts as the recentre, since connecting reads the
+// origin.
+#define RECENTER_RECONNECT_US 10000000
+// How long the combo must have been held for a drop to count as a reset
+#define RECENTER_DROP_HOLD_US 1000000
 
 static uint32_t _port_reorigin_time[4] = {0};
 
@@ -72,9 +75,6 @@ static bool _combo_held[4] = {false};
 static bool _combo_done[4] = {false};
 static uint32_t _combo_start[4] = {0};
 
-// Set when a port drops during a long X+Y+Start hold
-static bool _drop_during_combo[4] = {false};
-static uint32_t _drop_time[4] = {0};
 
 static void _gc_port_event(uint port, joybus_event_t type)
 {
@@ -156,9 +156,12 @@ static void _gc_port_miss(uint port)
     if (_port_miss_run[port] >= 10)
     {
         uint32_t now = time_us_32();
-        _drop_during_combo[port] = _combo_held[port] && !_combo_done[port]
-                                   && (now - _combo_start[port] >= RECENTER_HOLD_US - 500000);
-        _drop_time[port] = now;
+        if (_combo_held[port] && !_combo_done[port]
+            && (now - _combo_start[port] >= RECENTER_DROP_HOLD_US))
+        {
+            _port_status[port].recenter_pending = true;
+            _port_status[port].recenter_drop_time = now;
+        }
         _combo_held[port] = false;
 
         _port_status[port].drops += 1;
@@ -270,10 +273,10 @@ void _gc_port_data(uint port)
         _port_status[port].connect_time = time_us_32();
         _gc_port_event(port, JOYBUS_EVENT_CONNECT);
 
-        if (_drop_during_combo[port])
+        if (_port_status[port].recenter_pending)
         {
-            _drop_during_combo[port] = false;
-            if (_port_status[port].connect_time - _drop_time[port] < RECENTER_RECONNECT_US)
+            _port_status[port].recenter_pending = false;
+            if (_port_status[port].connect_time - _port_status[port].recenter_drop_time < RECENTER_RECONNECT_US)
                 _gc_port_recentered(port);
         }
     }

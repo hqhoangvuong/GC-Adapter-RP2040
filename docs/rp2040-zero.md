@@ -206,10 +206,11 @@ new centre, and the OLED shows **CENTERED**. The rest position screen shows
 the new values.
 
 The adapter also re-reads the centre whenever the controller itself asks for
-it, which an official controller does after its own X+Y+Start reset. Some
-controllers stop answering for a moment when they reset; the adapter then
-sees a short disconnect and reconnect, reads the new centre on reconnect,
-and still shows **CENTERED**. The **Events** screen shows which of these
+it, which an official controller does after its own X+Y+Start reset. Official
+controllers stop answering while they reset, sometimes until X+Y+Start is
+let go. The OLED then shows **CENTERING** instead of the idle screen, and
+when the controller answers again (within 10 seconds) the adapter reads the
+new centre and shows **CENTERED**. The **Events** screen shows which of these
 happened.
 
 ## Rumble after unplugging

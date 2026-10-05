@@ -44,6 +44,11 @@ typedef struct
     // Times X+Y+Start reset the stick centre, since boot
     uint32_t recenters;
 
+    // The controller dropped during an X+Y+Start hold (it resets itself)
+    // and hasn't reconnected yet; recenter_drop_time is when it dropped
+    bool recenter_pending;
+    uint32_t recenter_drop_time;
+
     // Last few events, newest first, for the OLED event screen
     uint8_t event_type[JOYBUS_EVENT_COUNT];
     uint32_t event_time[JOYBUS_EVENT_COUNT];
