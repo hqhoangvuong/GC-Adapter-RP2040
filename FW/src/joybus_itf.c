@@ -57,7 +57,35 @@ uint read_count = 0;
 // Byte 0 bit 5 of a poll reply: the controller wants its origin read again
 #define JOYBUS_GET_ORIGIN(byte_1) (((byte_1) >> 29) & 1)
 
+// Short drop while X+Y+Start is held: an official controller resets itself
+// at 3 s and may stop answering for a moment. A reconnect this soon after
+// such a drop counts as the recentre, since connecting reads the origin.
+#define RECENTER_RECONNECT_US 3000000
+
 static uint32_t _port_reorigin_time[4] = {0};
+
+// Consecutive missed reads
+static uint8_t _port_miss_run[4] = {0};
+
+// X+Y+Start hold tracking
+static bool _combo_held[4] = {false};
+static bool _combo_done[4] = {false};
+static uint32_t _combo_start[4] = {0};
+
+// Set when a port drops during a long X+Y+Start hold
+static bool _drop_during_combo[4] = {false};
+static uint32_t _drop_time[4] = {0};
+
+static void _gc_port_event(uint port, joybus_event_t type)
+{
+    for (int i = JOYBUS_EVENT_COUNT - 1; i > 0; i--)
+    {
+        _port_status[port].event_type[i] = _port_status[port].event_type[i - 1];
+        _port_status[port].event_time[i] = _port_status[port].event_time[i - 1];
+    }
+    _port_status[port].event_type[0] = type;
+    _port_status[port].event_time[0] = time_us_32();
+}
 
 void _gc_port_reset(uint port)
 {
@@ -88,32 +116,55 @@ static void _gc_port_set_origin(uint port)
     _port_status[port].origin_rt = _port_joybus[port].analog_trigger_r;
 }
 
+static void _gc_port_recentered(uint port)
+{
+    _port_status[port].recenters += 1;
+    _gc_port_event(port, JOYBUS_EVENT_RECENTER);
+}
+
 // X+Y+Start held for RECENTER_HOLD_US takes the current position as the new
 // centre. Reads raw values, so call it before the offsets are applied.
 static void _gc_port_check_recenter(uint port, uint32_t now)
 {
-    static bool held[4] = {false};
-    static bool done[4] = {false};
-    static uint32_t start[4] = {0};
-
     bool combo = _port_joybus[port].button_x && _port_joybus[port].button_y
                  && _port_joybus[port].button_start;
 
     if (!combo)
     {
-        held[port] = false;
+        _combo_held[port] = false;
     }
-    else if (!held[port])
+    else if (!_combo_held[port])
     {
-        held[port] = true;
-        done[port] = false;
-        start[port] = now;
+        _combo_held[port] = true;
+        _combo_done[port] = false;
+        _combo_start[port] = now;
     }
-    else if (!done[port] && (now - start[port] >= RECENTER_HOLD_US))
+    else if (!_combo_done[port] && (now - _combo_start[port] >= RECENTER_HOLD_US))
     {
-        done[port] = true;
+        _combo_done[port] = true;
         _gc_port_set_origin(port);
-        _port_status[port].recenters += 1;
+        _gc_port_recentered(port);
+    }
+}
+
+// Count a missed read; 10 in a row means the controller has gone
+static void _gc_port_miss(uint port)
+{
+    _port_miss_run[port] += 1;
+    _port_status[port].misses += 1;
+
+    if (_port_miss_run[port] >= 10)
+    {
+        uint32_t now = time_us_32();
+        _drop_during_combo[port] = _combo_held[port] && !_combo_done[port]
+                                   && (now - _combo_start[port] >= RECENTER_HOLD_US - 500000);
+        _drop_time[port] = now;
+        _combo_held[port] = false;
+
+        _port_status[port].drops += 1;
+        _gc_port_event(port, JOYBUS_EVENT_DROP);
+        _gc_port_reset(port);
+        _port_miss_run[port] = 0;
     }
 }
 
@@ -148,6 +199,15 @@ void _gc_port_data(uint port)
             {
                 _port_inputs[port][i] = pio_sm_get(JOYBUS_PIO, port);
             }
+            else if (_port_joybus[port].port_itf > -1)
+            {
+                // An origin re-read went unanswered. Keep the controller
+                // and its old centre; it can ask again.
+                _gc_port_event(port, JOYBUS_EVENT_ORIGIN_FAIL);
+                _port_phases[port] = 2;
+                _gc_port_miss(port);
+                return;
+            }
             else
             {
                 _gc_port_reset(port);
@@ -155,6 +215,7 @@ void _gc_port_data(uint port)
             }
         }
 
+        _port_miss_run[port] = 0;
         _port_joybus[port].byte_1 = _port_inputs[port][0];
         _port_joybus[port].byte_2 = _port_inputs[port][1];
 
@@ -175,7 +236,10 @@ void _gc_port_data(uint port)
         // A controller that asked for its origin again is already connected
         // and keeps its USB interface
         if (_port_joybus[port].port_itf > -1)
+        {
+            _gc_port_event(port, JOYBUS_EVENT_ORIGIN_READ);
             return;
+        }
 
         // Set the port USB Interface
         int tmp_itf = 0;
@@ -204,11 +268,17 @@ void _gc_port_data(uint port)
 
         _port_status[port].misses = 0;
         _port_status[port].connect_time = time_us_32();
+        _gc_port_event(port, JOYBUS_EVENT_CONNECT);
+
+        if (_drop_during_combo[port])
+        {
+            _drop_during_combo[port] = false;
+            if (_port_status[port].connect_time - _drop_time[port] < RECENTER_RECONNECT_US)
+                _gc_port_recentered(port);
+        }
     }
     else if (_port_phases[port] == 2)
     {
-        static uint8_t port_reset_timer[4] = {0};
-
         for (uint i = 0; i < 2; i++)
         {
             if (!pio_sm_is_rx_fifo_empty(JOYBUS_PIO, port))
@@ -217,22 +287,14 @@ void _gc_port_data(uint port)
             }
             else
             {   
-                port_reset_timer[port] += 1;
-                _port_status[port].misses += 1;
-                if(port_reset_timer[port]>=10)
-                {
-                    _port_status[port].drops += 1;
-                    _gc_port_reset(port);
-                    port_reset_timer[port] = 0;
-                }
-                
+                _gc_port_miss(port);
                 return;
             }
         }
 
         // A good reply ends any run of misses, so only 10 misses
         // in a row count as an unplug
-        port_reset_timer[port] = 0;
+        _port_miss_run[port] = 0;
         _port_status[port].reads += 1;
 
         _port_joybus[port].byte_1 = _port_inputs[port][0];
@@ -249,6 +311,7 @@ void _gc_port_data(uint port)
         {
             _port_reorigin_time[port] = now;
             _port_phases[port] = 1;
+            _gc_port_event(port, JOYBUS_EVENT_ORIGIN_ASK);
         }
 
         int lx = CLAMP_0_255(_port_joybus[port].stick_left_x + _port_offsets[port].lx_offset);

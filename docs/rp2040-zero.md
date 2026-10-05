@@ -184,14 +184,17 @@ Screens:
   3. **Status**: mode, USB state, good controller reads per second, missed
      reads, drops (times the controller stopped answering) and time
      connected.
+  4. **Events**: the last three things that happened to the controller
+     (connected, dropped, origin asked/read/failed, recentered) and how
+     long ago. Useful when something odd happens, such as a reconnect.
 - **SELF-TEST FAILED** at first boot names the data pin with no pull-up.
 - **CENTERED** confirms an X+Y+Start stick reset (see below).
 
-To protect the OLED from burn-in, the idle screen dims after 1 minute and
-switches off after 10 minutes. Plugging in a controller or pressing the
-button wakes it; that first press only wakes the screen, so you can see the
-mode before you change it. The other screens change constantly and stay at
-full brightness.
+To protect the OLED from burn-in, the screen dims after 1 minute with
+nothing happening and switches off after 10 minutes. Anything counts as
+activity: a button press, plugging a controller in or out, or pressing a
+controller button or moving a stick. A button press on a dimmed or dark
+screen only wakes it, so you can see the mode before you change it.
 
 ## Resetting the stick centre (X+Y+Start)
 
@@ -203,7 +206,11 @@ new centre, and the OLED shows **CENTERED**. The rest position screen shows
 the new values.
 
 The adapter also re-reads the centre whenever the controller itself asks for
-it, which an official controller does after its own X+Y+Start reset.
+it, which an official controller does after its own X+Y+Start reset. Some
+controllers stop answering for a moment when they reset; the adapter then
+sees a short disconnect and reconnect, reads the new centre on reconnect,
+and still shows **CENTERED**. The **Events** screen shows which of these
+happened.
 
 ## Rumble after unplugging
 

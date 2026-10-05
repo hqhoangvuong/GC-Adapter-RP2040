@@ -3,6 +3,19 @@
 
 #include "adapter_includes.h"
 
+typedef enum
+{
+    JOYBUS_EVENT_NONE,
+    JOYBUS_EVENT_CONNECT,       // controller answered the probe and origin
+    JOYBUS_EVENT_DROP,          // 10 missed reads in a row
+    JOYBUS_EVENT_ORIGIN_ASK,    // reply had the get-origin flag set
+    JOYBUS_EVENT_ORIGIN_READ,   // origin re-read while connected
+    JOYBUS_EVENT_ORIGIN_FAIL,   // no reply to that origin re-read
+    JOYBUS_EVENT_RECENTER,      // X+Y+Start took a new centre
+} joybus_event_t;
+
+#define JOYBUS_EVENT_COUNT 3
+
 // A consistent copy of one port's state, for code that runs on core 1
 // (the OLED). Core 0 publishes it after every poll.
 typedef struct
@@ -30,6 +43,10 @@ typedef struct
     uint32_t connect_time;
     // Times X+Y+Start reset the stick centre, since boot
     uint32_t recenters;
+
+    // Last few events, newest first, for the OLED event screen
+    uint8_t event_type[JOYBUS_EVENT_COUNT];
+    uint32_t event_time[JOYBUS_EVENT_COUNT];
 } joybus_port_status_s;
 
 void joybus_itf_get_status(uint port, joybus_port_status_s *out);

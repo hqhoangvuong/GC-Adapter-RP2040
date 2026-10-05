@@ -9,6 +9,14 @@
 #define OLED_CTRL_CMD  0x00
 #define OLED_CTRL_DATA 0x40
 
+// Normal and dimmed panel settings: contrast, precharge, VCOMH level
+#define OLED_CONTRAST_FULL  0x8F
+#define OLED_PRECHARGE_FULL 0xF1
+#define OLED_VCOMH_FULL     0x40
+#define OLED_CONTRAST_DIM   0x00
+#define OLED_PRECHARGE_DIM  0x11
+#define OLED_VCOMH_DIM      0x00
+
 static uint8_t _oled_addr = 0x3C;
 
 static bool _oled_write(const uint8_t *buf, size_t len)
@@ -77,8 +85,8 @@ bool oled_init()
 #endif
         0xDA, 0x02, // COM pins for 128x32
         0x81, OLED_CONTRAST_FULL, // contrast
-        0xD9, 0xF1, // precharge
-        0xDB, 0x40, // VCOMH level
+        0xD9, OLED_PRECHARGE_FULL, // precharge
+        0xDB, OLED_VCOMH_FULL,     // VCOMH level
         0x2E,       // scrolling off
         0xA4,       // show RAM contents
         0xA6,       // normal, not inverted
@@ -87,9 +95,13 @@ bool oled_init()
     return _oled_cmds(init, sizeof(init));
 }
 
-bool oled_set_contrast(uint8_t contrast)
+bool oled_set_dim(bool dim)
 {
-    uint8_t cmd[2] = {0x81, contrast};
+    uint8_t cmd[6] = {
+        0x81, dim ? OLED_CONTRAST_DIM : OLED_CONTRAST_FULL,
+        0xD9, dim ? OLED_PRECHARGE_DIM : OLED_PRECHARGE_FULL,
+        0xDB, dim ? OLED_VCOMH_DIM : OLED_VCOMH_FULL,
+    };
     return _oled_cmds(cmd, sizeof(cmd));
 }
 

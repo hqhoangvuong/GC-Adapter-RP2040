@@ -14,11 +14,16 @@
 #define DISPLAY_RETRY_US   1000000  // look for a missing display this often
 #define DISPLAY_MESSAGE_US 1500000
 
-// Burn-in protection: OLED pixels wear where they stay lit. Only the idle
-// screen is static for long, so it dims and then switches off.
+// Burn-in protection: OLED pixels wear where they stay lit. After a minute
+// with nothing happening (no button press, no controller plugged in or
+// out, no input from the controller) the screen dims, and after ten
+// minutes it switches off.
 #define DISPLAY_DIM_US     (60u * 1000000u)
 #define DISPLAY_OFF_US     (600u * 1000000u)
-#define DISPLAY_CONTRAST_DIM  0x01
+
+// Input changes smaller than this (stick noise) don't count as activity
+#define DISPLAY_STICK_ACTIVITY   8
+#define DISPLAY_TRIGGER_ACTIVITY 24
 
 typedef enum
 {
@@ -38,6 +43,7 @@ typedef enum
     SCREEN_LIVE,
     SCREEN_ORIGIN,
     SCREEN_STATUS,
+    SCREEN_EVENTS,
     SCREEN_COUNT,
 } screen_t;
 
@@ -294,6 +300,51 @@ static void _screen_status(const joybus_port_status_s *st, uint32_t reads_per_s)
     _text_right(24, line);
 }
 
+static const char *_event_name(uint8_t type)
+{
+    switch (type)
+    {
+    case JOYBUS_EVENT_CONNECT:     return "Connected";
+    case JOYBUS_EVENT_DROP:        return "Dropped";
+    case JOYBUS_EVENT_ORIGIN_ASK:  return "Origin asked";
+    case JOYBUS_EVENT_ORIGIN_READ: return "Origin read";
+    case JOYBUS_EVENT_ORIGIN_FAIL: return "Origin failed";
+    case JOYBUS_EVENT_RECENTER:    return "Recentered";
+    default:                       return NULL;
+    }
+}
+
+// The last few controller events, for working out what happened
+static void _screen_events(const joybus_port_status_s *st, uint port)
+{
+    char line[24];
+
+    snprintf(line, sizeof(line), "P%u events", port + 1);
+    _text(0, 0, line, 1, true);
+    snprintf(line, sizeof(line), "Drops %lu", (unsigned long)st->drops);
+    _text_right(0, line);
+
+    uint32_t now = time_us_32();
+    for (int i = 0; i < JOYBUS_EVENT_COUNT; i++)
+    {
+        const char *name = _event_name(st->event_type[i]);
+        if (!name)
+            break;
+
+        int y = 8 + i * 8;
+        _text(0, y, name, 1, true);
+
+        uint32_t ago = (now - st->event_time[i]) / 1000000;
+        if (ago < 60)
+            snprintf(line, sizeof(line), "%lus", (unsigned long)ago);
+        else if (ago < 3600)
+            snprintf(line, sizeof(line), "%lum", (unsigned long)(ago / 60));
+        else
+            snprintf(line, sizeof(line), "%luh", (unsigned long)(ago / 3600));
+        _text_right(y, line);
+    }
+}
+
 static void _screen_saved(input_mode_t mode)
 {
     _text((OLED_WIDTH - _text_width("SAVED", 2)) / 2, 0, "SAVED", 2, true);
@@ -328,8 +379,31 @@ static void _screen_fault(int pin)
 
 /* ---- Core 1 ---- */
 
-// Draw the current screen. Returns true for the idle screen, the only
-// one that dims.
+// True if the controller input moved noticeably since the last time this
+// returned true
+static bool _input_activity(const joybus_input_s *in)
+{
+    static joybus_input_s last = {0};
+
+    // Button bits live outside the stick bytes of byte_1
+    bool buttons = ((in->byte_1 ^ last.byte_1) & 0xFFFF0000u) != 0;
+    bool sticks = abs((int)in->stick_left_x - last.stick_left_x) > DISPLAY_STICK_ACTIVITY
+               || abs((int)in->stick_left_y - last.stick_left_y) > DISPLAY_STICK_ACTIVITY
+               || abs((int)in->stick_right_x - last.stick_right_x) > DISPLAY_STICK_ACTIVITY
+               || abs((int)in->stick_right_y - last.stick_right_y) > DISPLAY_STICK_ACTIVITY
+               || abs((int)in->analog_trigger_l - last.analog_trigger_l) > DISPLAY_TRIGGER_ACTIVITY
+               || abs((int)in->analog_trigger_r - last.analog_trigger_r) > DISPLAY_TRIGGER_ACTIVITY;
+
+    if (buttons || sticks)
+    {
+        last = *in;
+        return true;
+    }
+    return false;
+}
+
+// Draw the current screen. Returns true if something happened that should
+// keep the screen awake.
 static bool _render(uint32_t reads_per_s)
 {
     memset(_fb, 0, sizeof(_fb));
@@ -337,14 +411,18 @@ static bool _render(uint32_t reads_per_s)
     if (_fault_pin >= 0)
     {
         _screen_fault(_fault_pin);
-        return false;
+        return true;
     }
 
     if (!_ready)
     {
         _text(0, 12, "Starting...", 1, true);
-        return false;
+        return true;
     }
+
+    // Plugging a controller in or out counts as activity
+    static bool was_connected = false;
+    bool connected = false;
 
     // A new X+Y+Start reset on any port shows a confirmation
     static uint32_t recenters_seen = 0;
@@ -354,7 +432,10 @@ static bool _render(uint32_t reads_per_s)
     {
         joybus_itf_get_status(i, &st);
         recenters += st.recenters;
+        connected |= (st.input.port_itf > -1);
     }
+    bool active = (connected != was_connected);
+    was_connected = connected;
     if (recenters != recenters_seen)
     {
         recenters_seen = recenters;
@@ -369,7 +450,7 @@ static bool _render(uint32_t reads_per_s)
                 _screen_recentered();
             else
                 _screen_saved(_message_mode);
-            return false;
+            return true;
         }
         _message_active = false;
     }
@@ -386,13 +467,14 @@ static bool _render(uint32_t reads_per_s)
             case SCREEN_LIVE:   _screen_live(&st); break;
             case SCREEN_ORIGIN: _screen_origin(&st, i); break;
             case SCREEN_STATUS: _screen_status(&st, reads_per_s); break;
+            case SCREEN_EVENTS: _screen_events(&st, i); break;
             }
-            return false;
+            return _input_activity(&st.input) || active;
         }
     }
 
     _screen_idle();
-    return true;
+    return active;
 }
 
 // Good reads per second on the first connected port
@@ -435,7 +517,7 @@ static void _core1_entry()
     bool present = false;
     uint32_t last_try = time_us_32() - DISPLAY_RETRY_US;
     brightness_t brightness = BRIGHTNESS_FULL;
-    bool idle = false;
+    bool active = false;
     _activity_time = time_us_32();
 
     for (;;)
@@ -445,7 +527,7 @@ static void _core1_entry()
         uint32_t rate = _measure_reads(frame_start);
 
         if (present)
-            idle = _render(rate);
+            active = _render(rate);
 
         // Interrupts stay off while bytes go out. That keeps core 0's
         // flash-save pause (an interrupt) from stopping this core in the
@@ -460,13 +542,13 @@ static void _core1_entry()
             {
                 // A fresh init leaves the panel on at full brightness
                 brightness = BRIGHTNESS_FULL;
-                idle = _render(rate);
+                active = _render(rate);
             }
         }
 
         if (present)
         {
-            if (!idle)
+            if (active)
                 _activity_time = frame_start;
 
             uint32_t quiet = frame_start - _activity_time;
@@ -476,7 +558,7 @@ static void _core1_entry()
 
             if (want != brightness)
             {
-                bool ok = oled_set_contrast((want == BRIGHTNESS_FULL) ? OLED_CONTRAST_FULL : DISPLAY_CONTRAST_DIM)
+                bool ok = oled_set_dim(want != BRIGHTNESS_FULL)
                           && oled_set_on(want != BRIGHTNESS_OFF);
                 if (ok)
                     brightness = want;
