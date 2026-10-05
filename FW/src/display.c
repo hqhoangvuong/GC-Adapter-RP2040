@@ -45,6 +45,7 @@ typedef enum
 typedef enum
 {
     SCREEN_LIVE,
+    SCREEN_RANGE,
     SCREEN_ORIGIN,
     SCREEN_STATUS,
     SCREEN_EVENTS,
@@ -157,6 +158,22 @@ static void _text_right(int y, const char *s)
     _text(OLED_WIDTH - _text_width(s, 1), y, s, 1, true);
 }
 
+static void _line(int x0, int y0, int x1, int y1)
+{
+    int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+    int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy;
+    for (;;)
+    {
+        _px(x0, y0, true);
+        if (x0 == x1 && y0 == y1)
+            break;
+        int e2 = 2 * err;
+        if (e2 >= dy) { err += dy; x0 += sx; }
+        if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+}
+
 // A labelled key that turns solid while pressed
 static void _key(int x, int y, int w, int h, const char *label, bool pressed)
 {
@@ -261,6 +278,95 @@ static void _screen_live(const joybus_port_status_s *st)
 
     // Rumble, inverted while the host has it on
     _key(104, 22, 24, 10, "RMB", st->rumble);
+}
+
+/* ---- Stick range test ---- */
+
+#define RANGE_BOX   31
+#define RANGE_SCALE 14    // pixels for a distance of 128 from centre
+
+static const char *const _dir_names[8] = {"E", "NE", "N", "NW", "W", "SW", "S", "SE"};
+
+// Trace of how far the stick reached in each direction, in a box
+static void _range_plot(int x0, const uint16_t *r2)
+{
+    int cx = x0 + RANGE_BOX / 2;
+    int cy = RANGE_BOX / 2;
+    _rect(x0, 0, RANGE_BOX, RANGE_BOX);
+    _px(cx, cy, true);
+
+    int px[JOYBUS_RANGE_BINS], py[JOYBUS_RANGE_BINS];
+    for (int b = 0; b < JOYBUS_RANGE_BINS; b++)
+    {
+        float r = sqrtf((float)r2[b]) * RANGE_SCALE / 128.0f;
+        float a = b * (2.0f * (float)M_PI / JOYBUS_RANGE_BINS);
+        px[b] = cx + (int)lroundf(r * cosf(a));
+        py[b] = cy - (int)lroundf(r * sinf(a));
+    }
+
+    for (int b = 0; b < JOYBUS_RANGE_BINS; b++)
+    {
+        int n = (b + 1) % JOYBUS_RANGE_BINS;
+        if (!r2[b])
+            continue;
+        if (r2[n])
+            _line(px[b], py[b], px[n], py[n]);
+        else
+            _px(px[b], py[b], true);
+    }
+}
+
+// Reach towards each of the 8 directions (the best of the 3 slices around
+// it), or -1 if that direction hasn't been reached yet
+static void _range_dirs(const uint16_t *r2, int out[8])
+{
+    for (int d = 0; d < 8; d++)
+    {
+        uint16_t best = 0;
+        for (int k = -1; k <= 1; k++)
+        {
+            int b = (d * (JOYBUS_RANGE_BINS / 8) + k + JOYBUS_RANGE_BINS) % JOYBUS_RANGE_BINS;
+            if (r2[b] > best)
+                best = r2[b];
+        }
+        out[d] = best ? (int)lroundf(sqrtf((float)best)) : -1;
+    }
+}
+
+// Two lines of numbers for one stick: average reach and weakest direction
+static void _range_summary(int y, const char *name, const uint16_t *r2)
+{
+    char line[24];
+    int dirs[8];
+    _range_dirs(r2, dirs);
+
+    int sum = 0, low = 0;
+    for (int d = 0; d < 8; d++)
+    {
+        if (dirs[d] < 0)
+        {
+            snprintf(line, sizeof(line), "%s", name);
+            _text(67, y, line, 1, true);
+            _text(67, y + 8, " spin it", 1, true);
+            return;
+        }
+        sum += dirs[d];
+        if (dirs[d] < dirs[low])
+            low = d;
+    }
+
+    snprintf(line, sizeof(line), "%-4s av%3d", name, (sum + 4) / 8);
+    _text(67, y, line, 1, true);
+    snprintf(line, sizeof(line), " low%3d %s", dirs[low], _dir_names[low]);
+    _text(67, y + 8, line, 1, true);
+}
+
+static void _screen_range(const joybus_port_status_s *st)
+{
+    _range_plot(0, st->range_r2[JOYBUS_RANGE_MAIN]);
+    _range_plot(33, st->range_r2[JOYBUS_RANGE_C]);
+    _range_summary(0, "Main", st->range_r2[JOYBUS_RANGE_MAIN]);
+    _range_summary(16, "C", st->range_r2[JOYBUS_RANGE_C]);
 }
 
 static void _screen_origin(const joybus_port_status_s *st, uint port)
@@ -480,6 +586,7 @@ static bool _render(uint32_t reads_per_s)
             {
             default:
             case SCREEN_LIVE:   _screen_live(&st); break;
+            case SCREEN_RANGE:  _screen_range(&st); break;
             case SCREEN_ORIGIN: _screen_origin(&st, i); break;
             case SCREEN_STATUS: _screen_status(&st, reads_per_s); break;
             case SCREEN_EVENTS: _screen_events(&st, i); break;
@@ -618,6 +725,11 @@ bool display_running()
 void display_set_ready()
 {
     _ready = true;
+}
+
+bool display_on_range_screen()
+{
+    return _screen == SCREEN_RANGE;
 }
 
 void display_next_screen()

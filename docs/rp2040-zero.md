@@ -140,7 +140,7 @@ stays in its default mode, Switch Pro Controller.
 | Situation | Click | Hold 1 s |
 |---|---|---|
 | No controller plugged in | Next mode. The adapter reboots into it. | Save the current mode as the default (the OLED shows **SAVED**) |
-| Controller connected | Next OLED screen | Nothing |
+| Controller connected | Next OLED screen | Nothing (on the stick range screen: start the test again) |
 | Screen dimmed or off | Wake the screen only (the mode stays) | Save the default as above |
 
 - Mode order: Switch Pro → XInput → GameCube adapter → Slippi → back to
@@ -177,14 +177,15 @@ Screens:
 - With a controller connected, a click cycles through:
   1. **Live**: both sticks, analog triggers with L/R digital presses,
      A B X Y Z Start, the D-pad and rumble (`RMB` lights while rumbling).
-  2. **Rest position**: the stick and trigger values the controller reported
+  2. **Stick range**: see below.
+  3. **Rest position**: the stick and trigger values the controller reported
      when it was plugged in, and their offset from centre (128). The adapter
      treats these as centre, so large numbers mean a stick was touched while
      plugging in. Replug without touching the sticks to fix it.
-  3. **Status**: mode, USB state, good controller reads per second, missed
+  4. **Status**: mode, USB state, good controller reads per second, missed
      reads, drops (times the controller stopped answering) and time
      connected.
-  4. **Events**: the last three things that happened to the controller
+  5. **Events**: the last three things that happened to the controller
      (connected, dropped, origin asked/read/failed, recentered) and how
      long ago. Useful when something odd happens, such as a reconnect.
 - **SELF-TEST FAILED** at first boot names the data pin with no pull-up.
@@ -195,6 +196,32 @@ nothing happening and switches off after 10 minutes. Anything counts as
 activity: a button press, plugging a controller in or out, or pressing a
 controller button or moving a stick. A button press on a dimmed or dark
 screen only wakes it, so you can see the mode before you change it.
+
+## Stick range test
+
+The **Stick range** screen shows how far each stick reaches in every
+direction, to spot a worn stick or a damaged gate without a PC.
+
+1. Click to the stick range screen. Hold the button for 1 second to clear
+   any earlier test (it also clears whenever a controller connects or is
+   recentred).
+2. Roll each stick slowly around the edge of its gate, pressing it firmly
+   into the edge, two or three times. Pause briefly in each notch.
+3. Read the result:
+   - **Left box** (main stick) and **middle box** (C-stick) draw the shape
+     each stick traced. A healthy stick draws an even octagon. A flat or
+     dented side shows the direction that falls short.
+   - **av** is the average reach over the 8 directions (N, NE, E and so
+     on), in stick units from centre. **low** is the weakest direction and
+     its reach. Until a stick has reached all 8 directions it shows
+     `spin it`.
+   - Compare the directions with each other rather than against a fixed
+     number: reach varies between controllers, but on a healthy stick all 8
+     directions are close. A direction clearly lower than the rest points to
+     wear there.
+
+The adapter records every controller reading (about 1000 per second), so a
+quick spin is caught completely; the screen just shows the result.
 
 ## Resetting the stick centre (X+Y+Start)
 

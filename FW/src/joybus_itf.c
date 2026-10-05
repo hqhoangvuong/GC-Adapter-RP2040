@@ -116,8 +116,43 @@ static void _gc_port_set_origin(uint port)
     _port_status[port].origin_rt = _port_joybus[port].analog_trigger_r;
 }
 
+// Moves shorter than this from centre aren't recorded, which skips the
+// angle maths for a stick at rest
+#define RANGE_MIN_R2 (24 * 24)
+
+static void _gc_port_range_clear(uint port)
+{
+    memset(_port_status[port].range_r2, 0, sizeof(_port_status[port].range_r2));
+}
+
+// Record how far a stick reaches in its direction. Takes centred values.
+static void _gc_port_range_track(uint port, uint stick, uint8_t x, uint8_t y)
+{
+    int dx = (int)x - 128;
+    int dy = (int)y - 128;
+    uint32_t r2 = (uint32_t)(dx * dx + dy * dy);
+    if (r2 < RANGE_MIN_R2)
+        return;
+
+    float turn = atan2f((float)dy, (float)dx) * (JOYBUS_RANGE_BINS / (2.0f * (float)M_PI));
+    int bin = (int)lroundf(turn);
+    bin = ((bin % JOYBUS_RANGE_BINS) + JOYBUS_RANGE_BINS) % JOYBUS_RANGE_BINS;
+
+    uint16_t *slot = &_port_status[port].range_r2[stick][bin];
+    if (r2 > *slot)
+        *slot = (uint16_t)r2;
+}
+
+void joybus_itf_reset_range()
+{
+    for (uint i = 0; i < ADAPTER_PORT_COUNT; i++)
+        _gc_port_range_clear(i);
+}
+
 static void _gc_port_recentered(uint port)
 {
+    // The old range was measured from the old centre
+    _gc_port_range_clear(port);
     _port_status[port].recenters += 1;
     _gc_port_event(port, JOYBUS_EVENT_RECENTER);
 }
@@ -271,6 +306,7 @@ void _gc_port_data(uint port)
 
         _port_status[port].misses = 0;
         _port_status[port].connect_time = time_us_32();
+        _gc_port_range_clear(port);
         _gc_port_event(port, JOYBUS_EVENT_CONNECT);
 
         if (_port_status[port].recenter_pending)
@@ -333,6 +369,9 @@ void _gc_port_data(uint port)
 
         _port_joybus[port].analog_trigger_l = (uint8_t)lt;
         _port_joybus[port].analog_trigger_r = (uint8_t)rt;
+
+        _gc_port_range_track(port, JOYBUS_RANGE_MAIN, (uint8_t)lx, (uint8_t)ly);
+        _gc_port_range_track(port, JOYBUS_RANGE_C, (uint8_t)rx, (uint8_t)ry);
     }
 }
 

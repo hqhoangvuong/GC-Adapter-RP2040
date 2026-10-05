@@ -1,12 +1,14 @@
 #include "main.h"
 #include "display.h"
 #include "ui_button.h"
+#include "joybus_status.h"
 #include "hardware/sync.h"
 
 // One button, wired from ADAPTER_BUTTON_PIN to GND:
 //   No controller:        click = next mode (the adapter reboots into it)
 //                         hold  = save the current mode as the default
 //   Controller connected: click = next OLED screen
+//                         hold on the stick range screen = clear the test
 //   Screen dimmed or off: click = wake it only
 // Holding it while plugging in USB still enters BOOTSEL.
 
@@ -82,6 +84,14 @@ static void _ui_button_task(uint32_t timestamp)
             settings_set_mode(adapter_get_current_mode());
             settings_save();
             display_show_saved(adapter_get_current_mode());
+        }
+        // On the stick range screen a hold starts the test again
+        else if (!long_done && connected_at_press && _any_connected()
+                 && display_on_range_screen()
+                 && (timestamp - press_time >= UI_LONG_PRESS_US))
+        {
+            long_done = true;
+            joybus_itf_reset_range();
         }
     }
     else if (!level && pressed)

@@ -16,6 +16,12 @@ typedef enum
 
 #define JOYBUS_EVENT_COUNT 3
 
+// Stick range test: the circle is split into this many equal slices, the
+// first centred on "right" and going anticlockwise
+#define JOYBUS_RANGE_BINS 32
+#define JOYBUS_RANGE_MAIN 0
+#define JOYBUS_RANGE_C    1
+
 // A consistent copy of one port's state, for code that runs on core 1
 // (the OLED). Core 0 publishes it after every poll.
 typedef struct
@@ -49,11 +55,18 @@ typedef struct
     bool recenter_pending;
     uint32_t recenter_drop_time;
 
+    // Furthest each stick has reached in each slice, as the squared
+    // distance from centre (128,128). 0 = not reached yet.
+    uint16_t range_r2[2][JOYBUS_RANGE_BINS];
+
     // Last few events, newest first, for the OLED event screen
     uint8_t event_type[JOYBUS_EVENT_COUNT];
     uint32_t event_time[JOYBUS_EVENT_COUNT];
 } joybus_port_status_s;
 
 void joybus_itf_get_status(uint port, joybus_port_status_s *out);
+
+// Forget the recorded stick ranges on every port. Core 0 only.
+void joybus_itf_reset_range();
 
 #endif
